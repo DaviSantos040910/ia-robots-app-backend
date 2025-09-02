@@ -10,7 +10,9 @@ from .tokens import email_verification_token
 from .utils import send_verification_email
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404
-from ratelimit.decorators import ratelimit
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
+
 
 User = get_user_model()
 
@@ -18,7 +20,7 @@ class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
 
     # Simple rate limit decorator to reduce abuse (5 reqs per minute per ip)
-    @ratelimit(key="ip", rate="5/m", block=True)
+    @method_decorator(ratelimit(key="ip", rate="5/m", method='POST', block=True), name='dispatch')
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():

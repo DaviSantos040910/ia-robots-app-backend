@@ -15,7 +15,7 @@ def send_verification_email(request, user):
     token = email_verification_token.make_token(user)
     # Build URL (you may use a frontend deep link or a web page that calls API verify)
     # Example: https://your-domain.com/verify-email/?uid=...&token=...
-    verify_path = f"/api/auth/verify-email/?uid={uid}&token={token}"
+    verify_path = f"/auth/verify-email/?uid={uid}&token={token}"
     # If you have a frontend URL for opening, prefix accordingly
     verify_url = f"{request.scheme}://{request.get_host()}{verify_path}"
     subject = "Verify your email"

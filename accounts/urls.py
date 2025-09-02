@@ -1,6 +1,9 @@
 # accounts/urls.py
 from django.urls import path
 from .views import RegisterView, VerifyEmailView, ResendVerificationView, LoginView, MeView
+# views.py
+from django_ratelimit.decorators import ratelimit  # ao invés de 'ratelimit.decorators'
+
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
