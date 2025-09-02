@@ -1,0 +1,21 @@
+# Python
+*.pyc
+__pycache__/
+
+# Environment
+.env
+venv/
+env/
+*.sqlite3
+
+# Django
+db.sqlite3
+/staticfiles
+/media
+
+# IDE
+.vscode/
+.idea/
+
+# Node (se tiver frontend junto)
+node_modules/
