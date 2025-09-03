@@ -15,10 +15,26 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load .env if exists
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+print("SENDGRID_SENDER =", os.getenv("SENDGRID_SENDER"))
+
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+SENDGRID_SENDER = os.getenv("SENDGRID_SENDER")
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.sendgrid.net"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = "apikey"  # SendGrid exige usar literal "apikey"
+EMAIL_HOST_PASSWORD = os.getenv("SENDGRID_API_KEY")
+DEFAULT_FROM_EMAIL = os.getenv("SENDGRID_SENDER")
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 # SECURITY
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret")
@@ -133,7 +149,6 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_ALL_ORIGINS = True  # You can tighten this in production
 
 # Email backend for development (console)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Optional basic rate-limiting config (requires django-ratelimit if used)
 RATELIMIT_ENABLE = True
