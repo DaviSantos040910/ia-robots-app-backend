@@ -1,23 +1,22 @@
-"""
-URL configuration for myproject project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
+# myproject/urls.py
 from django.contrib import admin
 from django.urls import path, include
 
 urlpatterns = [
+    # Main admin site
     path('admin/', admin.site.urls),
+
+    # API URLs
+    # Include all URLs from the 'accounts' app under '/auth/'
     path('auth/', include('accounts.urls')),
+    
+    # Include all URLs from the 'bots' app under '/api/v1/bots/'
+    # This single line replaces all the individual bot and admin paths
+    path('api/v1/bots/', include('bots.urls')),
+    
+    # Include all URLs from the 'chat' app under '/api/v1/chats/'
+    path('api/v1/chats/', include('chat.urls')),
+    
+    # Include all URLs from the 'explore' app under '/api/v1/explore/'
+    path('api/v1/explore/', include('explore.urls')),
 ]

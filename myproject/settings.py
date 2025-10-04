@@ -31,6 +31,8 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "apikey"  # SendGrid exige usar literal "apikey"
 EMAIL_HOST_PASSWORD = os.getenv("SENDGRID_API_KEY")
 DEFAULT_FROM_EMAIL = os.getenv("SENDGRID_SENDER")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -54,6 +56,9 @@ INSTALLED_APPS = [
     "corsheaders",
 
     "accounts",  # Custom app
+    "bots",  # Custom app
+    "chat",  # Custom app
+    "explore", # Add this line
 ]
 
 MIDDLEWARE = [
