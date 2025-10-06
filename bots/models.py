@@ -11,6 +11,10 @@ class Category(models.Model):
 
 class Bot(models.Model):
     """Represents an AI bot created by a user."""
+    
+    # --- CORREÇÃO: A CLASSE 'Publicity' FOI RESTAURADA AQUI ---
+    # This class defines the choices for the 'publicity' field.
+    # It needs to be defined inside the Bot model before it is used.
     class Publicity(models.TextChoices):
         PRIVATE = 'Private', 'Private'
         GUESTS = 'Guests', 'Guests'
@@ -21,11 +25,18 @@ class Bot(models.Model):
     prompt = models.TextField()
     avatar_url = models.URLField(max_length=2048, blank=True, null=True)
     voice = models.CharField(max_length=50, default='EnergeticYouth')
-    language = models.CharField(max_length=50, default='English')
-    publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PUBLIC)
     
-    is_official = models.BooleanField(default=False) # Add this field
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='bots') # Add this field
+    # This line now works because 'Publicity' is defined above.
+    publicity = models.CharField(
+        max_length=10, 
+        choices=Publicity.choices, 
+        default=Publicity.PUBLIC
+    )
+    
+    is_official = models.BooleanField(default=False)
+    
+    # Switched from ForeignKey to ManyToManyField
+    categories = models.ManyToManyField(Category, related_name='bots', blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

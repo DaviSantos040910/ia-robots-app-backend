@@ -6,6 +6,10 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     """
     Serializer for the ChatMessage model.
     """
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Força o ID a ser enviado como uma string para corresponder ao tipo do frontend.
+    id = serializers.CharField(read_only=True)
+
     class Meta:
         model = ChatMessage
         fields = ('id', 'chat', 'role', 'content', 'created_at')

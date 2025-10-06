@@ -15,10 +15,24 @@ class BotAdmin(admin.ModelAdmin):
     """
     Admin interface options for the Bot model.
     """
-    list_display = ('name', 'owner', 'category', 'publicity', 'is_official')
-    list_filter = ('is_official', 'publicity', 'category')
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Substituímos 'category' por 'display_categories' para mostrar as categorias.
+    list_display = ('name', 'owner', 'display_categories', 'publicity', 'is_official')
+    # E atualizamos o 'list_filter' para usar o nome de campo correto.
+    list_filter = ('is_official', 'publicity', 'categories') 
+    
     search_fields = ('name', 'owner__username')
-    # This allows you to easily edit bot details in the admin panel
-    fields = ('name', 'prompt', 'owner', 'category', 'publicity', 'is_official', 'avatar_url', 'voice', 'language')
-    # Make owner field searchable instead of a dropdown for performance
+    # O campo 'language' foi removido
+    fields = ('name', 'prompt', 'owner', 'categories', 'publicity', 'is_official', 'avatar_url', 'voice')
     raw_id_fields = ('owner',)
+    # Use filter_horizontal for a much better user experience with ManyToManyFields
+    filter_horizontal = ('categories',) 
+
+    def display_categories(self, obj):
+        """
+        Creates a string for the admin list display that shows all categories for a bot.
+        """
+        return ", ".join([category.name for category in obj.categories.all()])
+    
+    # Set a user-friendly column header for our custom method
+    display_categories.short_description = 'Categories'
