@@ -1,6 +1,3 @@
-from django.shortcuts import render
-
-# Create your views here.
 # explore/views.py
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -22,19 +19,23 @@ class ExploreBotListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        # Start with only public bots
         queryset = Bot.objects.filter(publicity=Bot.Publicity.PUBLIC)
         
         # Filter by category
         category_id = self.request.query_params.get('category_id')
         if category_id:
-            queryset = queryset.filter(category_id=category_id)
+            # --- CORREÇÃO APLICADA AQUI ---
+            # We now filter using 'categories__id' because it's a ManyToManyField.
+            # This checks if the bot belongs to the category with the given ID.
+            queryset = queryset.filter(categories__id=category_id)
             
         # Filter by search term
         search_term = self.request.query_params.get('q')
         if search_term:
             queryset = queryset.filter(name__icontains=search_term)
             
-        return queryset
+        return queryset.distinct() # Use distinct() to avoid duplicates if a bot matches multiple criteria
 
 class SearchHistoryView(generics.ListCreateAPIView):
     """View to manage a user's search history."""
@@ -42,11 +43,9 @@ class SearchHistoryView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Return last 5 search terms for the current user
         return SearchHistory.objects.filter(user=self.request.user)[:5]
 
     def perform_create(self, serializer):
-        # Create or update the timestamp of the search term
         term = serializer.validated_data['term']
         obj, created = SearchHistory.objects.update_or_create(
             user=self.request.user, term=term,
@@ -54,7 +53,6 @@ class SearchHistoryView(generics.ListCreateAPIView):
         )
 
     def delete(self, request, *args, **kwargs):
-        # Delete all history for the user
         SearchHistory.objects.filter(user=self.request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

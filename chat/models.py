@@ -6,13 +6,32 @@ from bots.models import Bot
 class Chat(models.Model):
     """
     Represents a chat session between a user and a bot.
+    A user can have multiple chat sessions with the same bot, but only one can be 'active'.
     """
+    class ChatStatus(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        ARCHIVED = 'archived', 'Archived'
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chats')
     bot = models.ForeignKey(Bot, on_delete=models.CASCADE, related_name='chats')
+    
+    # --- NEW: Status field to manage active vs. archived conversations ---
+    status = models.CharField(
+        max_length=10,
+        choices=ChatStatus.choices,
+        default=ChatStatus.ACTIVE
+    )
+    
+    # --- NEW: Timestamp for ordering the chat list ---
+    last_message_at = models.DateTimeField(auto_now_add=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['-last_message_at'] # Order chats by the most recent message
+
     def __str__(self):
-        return f"Chat between {self.user.username} and {self.bot.name}"
+        return f"Chat {self.id} between {self.user.username} and {self.bot.name} ({self.status})"
 
 class ChatMessage(models.Model):
     """

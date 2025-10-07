@@ -2,98 +2,125 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 from .models import Chat, ChatMessage
-from .serializers import ChatSerializer, ChatMessageSerializer
+from .serializers import ChatListSerializer, ChatMessageSerializer
 from bots.models import Bot
 from django.shortcuts import get_object_or_404
 from .ai_service import get_ai_response
+from myproject.pagination import StandardMessagePagination # Import our pagination class
 
-class ChatListCreateView(generics.ListCreateAPIView):
+class ActiveChatListView(generics.ListAPIView):
     """
-    API view for listing and creating chat sessions.
+    --- MODIFIED VIEW ---
+    Lists all ACTIVE chat sessions for the authenticated user.
     """
-    queryset = Chat.objects.all()
-    serializer_class = ChatSerializer
+    serializer_class = ChatListSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Users can only see their own chats.
-        return Chat.objects.filter(user=self.request.user)
+        return Chat.objects.filter(user=self.request.user, status=Chat.ChatStatus.ACTIVE)
 
-    def perform_create(self, serializer):
-        # When creating a chat, you need to specify the bot.
-        bot_id = self.request.data.get('bot_id')
-        bot = get_object_or_404(Bot, id=bot_id)
-        serializer.save(user=self.request.user, bot=bot)
+class ArchivedChatListView(generics.ListAPIView):
+    """
+    --- NEW VIEW ---
+    Lists all ARCHIVED chat sessions for a specific bot and user.
+    """
+    serializer_class = ChatListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        bot_id = self.kwargs['bot_id']
+        return Chat.objects.filter(
+            user=self.request.user, 
+            bot_id=bot_id, 
+            status=Chat.ChatStatus.ARCHIVED
+        )
 
 class ChatBootstrapView(APIView):
     """
-    Provides the initial data needed to bootstrap the chat screen.
-    It finds or creates a chat session and returns bot details and welcome message.
+    Finds the active chat for a bot or creates a new one.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, bot_id):
         bot = get_object_or_404(Bot, id=bot_id)
         
-        # Find an existing chat or create a new one
-        chat, created = Chat.objects.get_or_create(user=request.user, bot=bot)
-
-        # Structure the data exactly as the frontend's ChatBootstrap type expects
+        # --- MODIFIED LOGIC ---
+        # Find an existing ACTIVE chat or create a new one.
+        chat, created = Chat.objects.get_or_create(
+            user=request.user, 
+            bot=bot, 
+            status=Chat.ChatStatus.ACTIVE
+        )
+        
         bootstrap_data = {
             "conversationId": str(chat.id),
-            "bot": {
-                "name": bot.name,
-                "handle": f"@{bot.owner.username}",
-                "avatarUrl": bot.avatar_url
-            },
-            "welcome": "Hello. I'm your new friend. You can ask me any questions.", # Placeholder message
-            "suggestions": [ # Placeholder suggestions
-                'Customize a savings plan for me.',
-                'Have a healthy meal.',
-                'U.S. travel plans for 2024.',
-            ]
+            "bot": { "name": bot.name, "handle": f"@{bot.owner.username}", "avatarUrl": bot.avatar_url },
+            "welcome": "Hello. I'm your new friend. You can ask me any questions.",
+            "suggestions": ['Customize a savings plan for me.', 'Have a healthy meal.', 'U.S. travel plans for 2024.']
         }
         return Response(bootstrap_data, status=status.HTTP_200_OK)
 
-class ChatMessageListCreateView(generics.ListCreateAPIView):
+class ChatMessageListView(generics.ListCreateAPIView):
     """
-    API view for listing and creating chat messages within a specific chat.
-    Integrates with an AI service for bot responses.
+    --- MODIFIED VIEW ---
+    Lists and creates chat messages with pagination.
     """
-    queryset = ChatMessage.objects.all()
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardMessagePagination # Apply pagination
 
     def get_queryset(self):
         chat_id = self.kwargs['chat_pk']
-        return ChatMessage.objects.filter(chat_id=chat_id, chat__user=self.request.user)
+        # Ensure the user can only access their own chats
+        get_object_or_404(Chat, id=chat_id, user=self.request.user)
+        return ChatMessage.objects.filter(chat_id=chat_id).order_by('-created_at') # Order by newest first for pagination
 
-    def create(self, request, *args, **kwargs):
+    def perform_create(self, serializer):
         chat_id = self.kwargs['chat_pk']
         chat = get_object_or_404(Chat, id=chat_id, user=self.request.user)
-        user_message_content = request.data.get('content')
+        
+        # Save user message
+        user_message = serializer.save(chat=chat, role=ChatMessage.Role.USER)
+        
+        # Update chat's last message timestamp to bring it to the top of the list
+        chat.last_message_at = user_message.created_at
+        chat.save()
 
-        if not user_message_content:
-            return Response({"detail": "Content is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 1. Save the user's message
-        ChatMessage.objects.create(
-            chat=chat, 
-            role=ChatMessage.Role.USER, 
-            content=user_message_content
-        )
-
-        # 2. Get the response from the AI service
-        ai_response_content = get_ai_response(chat_id, user_message_content)
-
-        # 3. Save the AI's message
+        # Get AI response
+        ai_response_content = get_ai_response(chat_id, user_message.content)
+        
+        # Save AI message
         ai_message = ChatMessage.objects.create(
             chat=chat, 
             role=ChatMessage.Role.ASSISTANT, 
             content=ai_response_content
         )
-        ai_message_serializer = self.get_serializer(ai_message)
+        
+        # Update timestamp again with the AI message for perfect ordering
+        chat.last_message_at = ai_message.created_at
+        chat.save()
 
-        # 4. Return the AI's message to the frontend
-        return Response(ai_message_serializer.data, status=status.HTTP_201_CREATED)
+class ArchiveChatView(APIView):
+    """
+    --- NEW VIEW ---
+    Archives a chat and creates a new active one for the same bot.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, chat_id):
+        # Archive the current chat
+        chat_to_archive = get_object_or_404(Chat, id=chat_id, user=request.user)
+        chat_to_archive.status = Chat.ChatStatus.ARCHIVED
+        chat_to_archive.save()
+
+        # Create a new active chat for the same bot and user
+        new_active_chat = Chat.objects.create(
+            user=request.user,
+            bot=chat_to_archive.bot,
+            status=Chat.ChatStatus.ACTIVE
+        )
+
+        # Return the ID of the new chat so the frontend can navigate to it
+        return Response({"new_chat_id": new_active_chat.id}, status=status.HTTP_201_CREATED)

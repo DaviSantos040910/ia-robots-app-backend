@@ -8,7 +8,7 @@ class CategorySerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Category
-        fields = ('id', 'name')
+        fields = ('id', 'name', 'translation_key')
 
 class BotSerializer(serializers.ModelSerializer):
     """
@@ -23,7 +23,7 @@ class BotSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bot
         fields = (
-            'id', 'name', 'prompt', 'avatar_url', 'voice',
+            'id', 'name', 'description','prompt', 'avatar_url', 'voice',
             'publicity', 'is_official', 'owner', 'owner_username',
             'categories', 'category_ids'
         )
