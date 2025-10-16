@@ -1,7 +1,8 @@
 # myproject/urls.py
 from django.contrib import admin
 from django.urls import path, include
-
+from django.conf import settings
+from django.conf.urls.static import static
 urlpatterns = [
     # Main admin site
     path('admin/', admin.site.urls),
@@ -20,3 +21,7 @@ urlpatterns = [
     # Include all URLs from the 'explore' app under '/api/v1/explore/'
     path('api/v1/explore/', include('explore.urls')),
 ]
+# --- Add this line at the end ---
+# This tells Django to serve files from MEDIA_ROOT when in DEBUG mode.
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

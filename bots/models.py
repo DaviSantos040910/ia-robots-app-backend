@@ -28,7 +28,7 @@ class Bot(models.Model):
     name = models.CharField(max_length=100)
     description = models.CharField(max_length=255, blank=True, help_text="A short description of what the bot does.")
     prompt = models.TextField()
-    avatar_url = models.URLField(max_length=2048, blank=True, null=True)
+    avatar_url = models.ImageField(upload_to='bot_avatars/', null=True, blank=True)
     voice = models.CharField(max_length=50, default='EnergeticYouth')
     publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PUBLIC)
     is_official = models.BooleanField(default=False)

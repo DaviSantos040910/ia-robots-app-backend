@@ -157,3 +157,14 @@ CORS_ALLOW_ALL_ORIGINS = True  # You can tighten this in production
 
 # Optional basic rate-limiting config (requires django-ratelimit if used)
 RATELIMIT_ENABLE = True
+
+# myproject/settings.py
+# ... (rest of your settings)
+
+# --- Media Files Configuration (User-Uploaded Files) ---
+# The absolute path to the directory where user-uploaded files will be stored.
+# We'll create a 'media' folder in the project's root directory.
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# The URL that will serve the media files.
+MEDIA_URL = '/media/'
