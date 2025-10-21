@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Bot
 from .serializers import BotSerializer, BotDetailSerializer
+from chat.ai_service import generate_suggestions_for_bot # Importar a nossa nova função
 
 class BotListCreateView(generics.ListCreateAPIView):
     """
@@ -23,6 +24,12 @@ class BotListCreateView(generics.ListCreateAPIView):
         # 2. Then, we automatically add the owner to the subscribers list.
         # This ensures the created bot appears on the user's "My Bots" screen.
         bot.subscribers.add(self.request.user)
+        # --- NOVA LÓGICA: Gerar e guardar as sugestões ---
+        suggestions = generate_suggestions_for_bot(bot.prompt)
+        bot.suggestion1 = suggestions[0] if len(suggestions) > 0 else ""
+        bot.suggestion2 = suggestions[1] if len(suggestions) > 1 else ""
+        bot.suggestion3 = suggestions[2] if len(suggestions) > 2 else ""
+        bot.save()
 
 class SubscribedBotListView(generics.ListAPIView):
     """

@@ -10,6 +10,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = ('id', 'chat', 'role', 'content', 'created_at')
+        read_only_fields = ('id', 'chat', 'role', 'created_at')
 
 class ChatListSerializer(serializers.ModelSerializer):
     """

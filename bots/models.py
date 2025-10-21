@@ -38,6 +38,10 @@ class Bot(models.Model):
     # This field will store which users have added this bot to their personal list.
     subscribers = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='subscribed_bots', blank=True)
     
+    suggestion1 = models.CharField(max_length=128, blank=True, help_text="First suggested prompt.")
+    suggestion2 = models.CharField(max_length=128, blank=True, help_text="Second suggested prompt.")
+    suggestion3 = models.CharField(max_length=128, blank=True, help_text="Third suggested prompt.")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

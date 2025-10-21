@@ -53,12 +53,17 @@ class ChatBootstrapView(APIView):
             bot=bot, 
             status=Chat.ChatStatus.ACTIVE
         )
+        suggestions = [s for s in [bot.suggestion1, bot.suggestion2, bot.suggestion3] if s]
+
+        avatar_url_path = None
+        if bot.avatar_url:
+            avatar_url_path = request.build_absolute_uri(bot.avatar_url.url)
         
         bootstrap_data = {
             "conversationId": str(chat.id),
-            "bot": { "name": bot.name, "handle": f"@{bot.owner.username}", "avatarUrl": bot.avatar_url },
-            "welcome": "Hello. I'm your new friend. You can ask me any questions.",
-            "suggestions": ['Customize a savings plan for me.', 'Have a healthy meal.', 'U.S. travel plans for 2024.']
+            "bot": { "name": bot.name, "handle": f"@{bot.owner.username}", "avatarUrl": avatar_url_path },
+           "welcome": bot.description or "Hello! How can I help you today?",
+            "suggestions": suggestions
         }
         return Response(bootstrap_data, status=status.HTTP_200_OK)
 
@@ -76,6 +81,28 @@ class ChatMessageListView(generics.ListCreateAPIView):
         # Ensure the user can only access their own chats
         get_object_or_404(Chat, id=chat_id, user=self.request.user)
         return ChatMessage.objects.filter(chat_id=chat_id).order_by('-created_at') # Order by newest first for pagination
+
+        def create(self, request, *args, **kwargs):
+            serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        chat_id = self.kwargs['chat_pk']
+        chat = get_object_or_404(Chat, id=chat_id, user=self.request.user)
+        
+        user_message = serializer.save(chat=chat, role=ChatMessage.Role.USER)
+        chat.last_message_at = timezone.now()
+        chat.save()
+
+        ai_response_content = get_ai_response(chat_id, user_message.content)
+        ai_message = ChatMessage.objects.create(
+            chat=chat, role=ChatMessage.Role.ASSISTANT, content=ai_response_content
+        )
+        chat.last_message_at = timezone.now()
+        chat.save()
+
+        # Retorna a resposta da IA, como o frontend espera
+        ai_serializer = self.get_serializer(ai_message)
+        return Response(ai_serializer.data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         chat_id = self.kwargs['chat_pk']
