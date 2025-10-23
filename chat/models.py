@@ -45,6 +45,8 @@ class ChatMessage(models.Model):
     role = models.CharField(max_length=10, choices=Role.choices)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
-
+    suggestion1 = models.CharField(max_length=128, null=True, blank=True, help_text="First follow-up suggestion.")
+    suggestion2 = models.CharField(max_length=128, null=True, blank=True, help_text="Second follow-up suggestion.")
+    # -----------------------
     def __str__(self):
         return f"{self.role}: {self.content[:50]}"

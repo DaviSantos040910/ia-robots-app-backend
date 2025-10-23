@@ -24,7 +24,7 @@ def generate_suggestions_for_bot(prompt: str):
     """
     try:
         # Usar 'gemini-1.5-flash-latest' é mais estável
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         
         instruction = f"""
         Based on the following bot's instructions, generate exactly three short, engaging, and distinct conversation starters (under 10 words each).
@@ -62,7 +62,6 @@ def get_ai_response(chat_id: int, user_message: str):
         generation_config = genai.types.GenerationConfig(
             temperature=0.7,
             max_output_tokens=500,
-            # --- NOVO: Forçar a saída em formato JSON ---
             response_mime_type="application/json"
         )
 
@@ -73,24 +72,27 @@ def get_ai_response(chat_id: int, user_message: str):
         }
 
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash-latest',
+            model_name='gemini-2.5-flash-lite',
             generation_config=generation_config,
             safety_settings=safety_settings,
             system_instruction=bot.prompt
         )
-        
+
+        # Esta linha retorna dicionários
         history = ChatMessage.objects.filter(chat_id=chat_id).order_by('created_at').values('role', 'content')[:10]
 
         gemini_history = []
         for msg in history:
-            if "An unexpected error occurred" in msg.content:
+            # --- CORREÇÃO APLICADA AQUI ---
+            # Acessar o conteúdo usando a chave do dicionário
+            if "An unexpected error occurred" in msg['content']:
                 continue
+            # -------------------------------
             role = 'user' if msg['role'] == 'user' else 'model'
-            gemini_history.append({'role': role, 'parts': [{'text': msg['content']}]})
+            gemini_history.append({'role': role, 'parts': [{'text': msg['content']}]}) # Aqui já estava correto
 
         chat_session = model.start_chat(history=gemini_history)
-        
-        # --- NOVO: Instrução para a IA retornar um JSON ---
+
         ai_prompt = f"""
         User's message: "{user_message}"
 
@@ -102,11 +104,10 @@ def get_ai_response(chat_id: int, user_message: str):
           "suggestions": ["First suggestion", "Second suggestion"]
         }}
         """
-        
+
         response = chat_session.send_message(ai_prompt)
 
         if response.parts:
-            # Parse the JSON response
             response_data = json.loads(response.text)
             return {
                 'content': response_data.get('response', "Sorry, I couldn't generate a response."),
@@ -123,6 +124,7 @@ def get_ai_response(chat_id: int, user_message: str):
             }
 
     except Exception as e:
+        # Aqui é onde o erro original ('dict' object has no attribute 'content') estava sendo logado
         print(f"An error occurred in Gemini AI service: {e}")
         return {
             'content': "An unexpected error occurred while generating a response. Please try again.",
