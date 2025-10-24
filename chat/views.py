@@ -125,3 +125,46 @@ class ArchiveChatView(APIView):
             status=Chat.ChatStatus.ACTIVE
         )
         return Response({"new_chat_id": new_active_chat.id}, status=status.HTTP_201_CREATED)
+class SetActiveChatView(APIView):
+    """
+    API view to set a specific (usually archived) chat as the active one for a bot.
+    This implicitly archives the currently active chat for the same bot.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, chat_id):
+        """
+        Handles the POST request to activate a chat.
+        """
+        user = request.user
+        
+        # 1. Find the chat the user wants to activate
+        #    Ensure it belongs to the user
+        chat_to_activate = get_object_or_404(Chat, id=chat_id, user=user)
+        bot = chat_to_activate.bot
+
+        # If it's already active, there's nothing to do
+        if chat_to_activate.status == Chat.ChatStatus.ACTIVE:
+            return Response({"status": "already active"}, status=status.HTTP_200_OK)
+
+        # 2. Find the currently active chat for the *same bot* and *same user* (if it exists)
+        current_active_chat = Chat.objects.filter(
+            user=user, 
+            bot=bot, 
+            status=Chat.ChatStatus.ACTIVE
+        ).first() # Use .first() as there should ideally be only one
+
+        # 3. Archive the (old) currently active chat
+        if current_active_chat:
+            current_active_chat.status = Chat.ChatStatus.ARCHIVED
+            current_active_chat.save()
+
+        # 4. Activate the selected chat
+        chat_to_activate.status = Chat.ChatStatus.ACTIVE
+        # Update the timestamp so it appears at the top of the main chat list
+        chat_to_activate.last_message_at = timezone.now() 
+        chat_to_activate.save()
+
+        # Return the newly activated chat's data
+        serializer = ChatListSerializer(chat_to_activate) 
+        return Response(serializer.data, status=status.HTTP_200_OK)

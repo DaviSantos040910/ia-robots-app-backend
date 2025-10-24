@@ -5,7 +5,8 @@ from .views import (
     ChatMessageListView, 
     ChatBootstrapView,
     ArchiveChatView,      # New import
-    ArchivedChatListView  # New import
+    ArchivedChatListView, # New import
+    SetActiveChatView 
 )
 
 urlpatterns = [
@@ -18,6 +19,8 @@ urlpatterns = [
     # POST /api/v1/chats/<chat_id>/archive/ -> Archives a chat and creates a new one
     path('<int:chat_id>/archive/', ArchiveChatView.as_view(), name='archive-chat'),
     
+    path('<int:chat_id>/set-active/', SetActiveChatView.as_view(), name='set-active-chat'),
+
     path('bootstrap/bot/<int:bot_id>/', ChatBootstrapView.as_view(), name='chat-bootstrap'),
     path('<int:chat_pk>/messages/', ChatMessageListView.as_view(), name='chat-message-list-create'),
 ]
