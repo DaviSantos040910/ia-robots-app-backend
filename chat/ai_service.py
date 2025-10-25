@@ -1,12 +1,13 @@
 # chat/ai_service.py
 import google.generativeai as genai
 import os
-import json # <-- CORREÇÃO: Importação do JSON adicionada
+import json
 from django.conf import settings
 from .models import ChatMessage, Chat
 from bots.models import Bot
+import re # Adicionado para a nova função
 
-# Configura a API key a partir do ficheiro .env
+# Configura a API key
 try:
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
@@ -16,15 +17,9 @@ try:
 except Exception as e:
     print(f"Error configuring Gemini API: {e}")
 
-# --- CORREÇÃO: Função com indentação corrigida ---
 def generate_suggestions_for_bot(prompt: str):
-    """
-    Calls the AI model to generate three initial conversation starters
-    based on the bot's main prompt.
-    """
     try:
-        # Usar 'gemini-1.5-flash-latest' é mais estável
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite') # Usando 1.5-flash
         
         instruction = f"""
         Based on the following bot's instructions, generate exactly three short, engaging, and distinct conversation starters (under 10 words each).
@@ -36,20 +31,20 @@ def generate_suggestions_for_bot(prompt: str):
         
         response = model.generate_content(instruction)
         
-        cleaned_response = response.text.strip().replace('`', '').replace('json', '')
+        # Limpa a resposta antes de fazer o parse do JSON
+        cleaned_response = re.sub(r'^```json\n|\n```$', '', response.text.strip(), flags=re.MULTILINE)
         suggestions = json.loads(cleaned_response)
         
-        if isinstance(suggestions, list) and len(suggestions) == 3 and all(isinstance(s, str) for s in suggestions):
-            return suggestions
+        if isinstance(suggestions, list) and len(suggestions) > 0 and all(isinstance(s, str) for s in suggestions):
+             # Retorna apenas as 3 primeiras, caso a IA envie mais
+            return suggestions[:3]
         
     except Exception as e:
         print(f"Could not generate suggestions: {e}")
     
-    # --- CORREÇÃO: Indentação do return de fallback corrigida ---
     return ["Tell me more.", "What can you do?", "Give me an example."]
 
 
-# --- FUNÇÃO ATUALIZADA ---
 def get_ai_response(chat_id: int, user_message: str):
     """
     Obtém uma resposta ESTRUTURADA (resposta + sugestões) do modelo Gemini.
@@ -72,24 +67,22 @@ def get_ai_response(chat_id: int, user_message: str):
         }
 
         model = genai.GenerativeModel(
-            model_name='gemini-2.5-flash-lite',
+            model_name='gemini-2.5-flash-lite', # Usando 1.5-flash
             generation_config=generation_config,
             safety_settings=safety_settings,
             system_instruction=bot.prompt
         )
 
-        # Esta linha retorna dicionários
-        history = ChatMessage.objects.filter(chat_id=chat_id).order_by('created_at').values('role', 'content')[:10]
+        # --- CORREÇÃO: PEGA O HISTÓRICO ANTES DA MENSAGEM ATUAL ---
+        # Pega as últimas 10 mensagens *excluindo* a que acabamos de salvar
+        history = ChatMessage.objects.filter(chat_id=chat_id).order_by('created_at').exclude(content=user_message).values('role', 'content')[:10]
 
         gemini_history = []
         for msg in history:
-            # --- CORREÇÃO APLICADA AQUI ---
-            # Acessar o conteúdo usando a chave do dicionário
             if "An unexpected error occurred" in msg['content']:
                 continue
-            # -------------------------------
             role = 'user' if msg['role'] == 'user' else 'model'
-            gemini_history.append({'role': role, 'parts': [{'text': msg['content']}]}) # Aqui já estava correto
+            gemini_history.append({'role': role, 'parts': [{'text': msg['content']}]})
 
         chat_session = model.start_chat(history=gemini_history)
 
@@ -108,11 +101,23 @@ def get_ai_response(chat_id: int, user_message: str):
         response = chat_session.send_message(ai_prompt)
 
         if response.parts:
-            response_data = json.loads(response.text)
-            return {
-                'content': response_data.get('response', "Sorry, I couldn't generate a response."),
-                'suggestions': response_data.get('suggestions', [])
-            }
+            # --- CORREÇÃO: Parse JSON com try/except ---
+            try:
+                # Limpa a resposta antes de fazer o parse
+                cleaned_text = re.sub(r'^```json\n|\n```$', '', response.text.strip(), flags=re.MULTILINE)
+                response_data = json.loads(cleaned_text)
+                return {
+                    'content': response_data.get('response', "Sorry, I couldn't generate a response."),
+                    'suggestions': response_data.get('suggestions', [])
+                }
+            except json.JSONDecodeError as json_err:
+                print(f"Gemini JSON parse error: {json_err}. Raw text: {response.text}")
+                # Retorna o texto bruto se o JSON falhar, sem sugestões
+                return {
+                    'content': response.text,
+                    'suggestions': []
+                }
+            # --- FIM DA CORREÇÃO ---
         else:
             reason = "UNKNOWN"
             if response.candidates and response.candidates[0].finish_reason:
@@ -124,7 +129,6 @@ def get_ai_response(chat_id: int, user_message: str):
             }
 
     except Exception as e:
-        # Aqui é onde o erro original ('dict' object has no attribute 'content') estava sendo logado
         print(f"An error occurred in Gemini AI service: {e}")
         return {
             'content': "An unexpected error occurred while generating a response. Please try again.",
