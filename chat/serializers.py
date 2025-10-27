@@ -7,10 +7,21 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     """
     Serializer for the ChatMessage model.
     """
+    suggestions = serializers.SerializerMethodField()
     class Meta:
         model = ChatMessage
-        fields = ('id', 'chat', 'role', 'content', 'created_at')
-        read_only_fields = ('id', 'chat', 'role', 'created_at')
+        fields = ('id', 'chat', 'role', 'content', 'created_at', 'suggestions')
+        read_only_fields = ('id', 'chat', 'role', 'created_at', 'suggestions')
+    def get_suggestions(self, obj):
+        """
+        Combines suggestion1 and suggestion2 into a list, filtering out empty ones.
+        """
+        suggestions_list = []
+        if obj.suggestion1:
+            suggestions_list.append(obj.suggestion1)
+        if obj.suggestion2:
+            suggestions_list.append(obj.suggestion2)
+        return suggestions_list
 
 class ChatListSerializer(serializers.ModelSerializer):
     """
