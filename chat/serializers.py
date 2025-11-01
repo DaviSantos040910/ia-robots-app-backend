@@ -13,7 +13,14 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         # Adiciona os novos campos para LEITURA
         fields = ('id', 'chat', 'role', 'content', 'created_at', 'suggestions',
                   'attachment_url', 'attachment_type', 'original_filename')
-        read_only_fields = fields # Tornar todos read_only neste serializer
+        
+        # --- CORREÇÃO 1: O PROBLEMA DO TEXTO SUMINDO ---
+        # Antes: read_only_fields = fields (Isso tornava 'content' somente leitura)
+        # Agora: Definimos explicitamente quais campos são 'read-only'.
+        # 'content' e 'role' NÃO estão aqui, permitindo que a view de 
+        # mensagem de texto (`ChatMessageListView`) os salve.
+        read_only_fields = ('id', 'chat', 'created_at', 'suggestions',
+                          'attachment_url', 'attachment_type', 'original_filename')
 
     def get_suggestions(self, obj):
         suggestions_list = []
@@ -64,14 +71,16 @@ class ChatMessageAttachmentSerializer(serializers.ModelSerializer):
         model = ChatMessage
         fields = ('id', 'chat', 'role', 'content', 'created_at',
                   'attachment', 'attachment_type', 'original_filename')
-        # role, attachment_type, original_filename serão definidos na view
-        read_only_fields = ('id', 'chat', 'role', 'created_at',
-                            'attachment_type', 'original_filename')
+        
+        # --- CORREÇÃO 2: O PROBLEMA DO ANEXO SUMINDO ---
+        # Antes: 'attachment_type' e 'original_filename' estavam aqui.
+        # Agora: Removemos eles, permitindo que a view de anexo 
+        # (`ChatMessageAttachmentView`) salve esses campos.
+        read_only_fields = ('id', 'chat', 'role', 'created_at')
+
     def validate_attachment(self, value):
         # Validação existente...
         MAX_UPLOAD_SIZE = 10 * 1024 * 1024
         if value.size > MAX_UPLOAD_SIZE:
             raise serializers.ValidationError(f"File size cannot exceed {MAX_UPLOAD_SIZE // (1024*1024)}MB.")
         return value
-
-    
