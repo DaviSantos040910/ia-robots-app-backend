@@ -187,60 +187,71 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
              raise DRFValidationError({"detail": "Failed to save attachment message."}, code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-    # ---- ESTA É A FUNÇÃO MODIFICADA ----
-    def create(self, request, *args, **kwargs):
-        try:
-            # 1. Valida e salva a mensagem do anexo (como antes)
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            user_message = self.perform_create(serializer) # 'user_message' é a instância da mensagem salva
-            
-            # 2. Prepara para chamar a IA
-            chat = user_message.chat
-            # Cria um prompt de contexto para a IA saber o que aconteceu
-            ai_prompt_text = f"[O usuário enviou um arquivo: {user_message.original_filename}]"
-            
-            # 3. Chama a IA
-            ai_response_data = get_ai_response(chat.id, ai_prompt_text)
-            # Define uma resposta padrão caso a IA falhe
-            ai_content = ai_response_data.get('content', f"Recebi seu arquivo: {user_message.original_filename}")
-            ai_suggestions = ai_response_data.get('suggestions', [])
+def create(self, request, *args, **kwargs):
+    try:
+        # 1. Valida e salva a mensagem do anexo
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_message = self.perform_create(serializer)  # Retorna a instância salva
 
-            paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
-            
-            ai_messages = []
-            for i, paragraph_content in enumerate(paragraphs):
-                is_first_paragraph = i == 0
-                suggestions = ai_suggestions if is_first_paragraph else []
+        # 2. Prepara para chamar a IA
+        chat = user_message.chat
 
-                ai_message = ChatMessage.objects.create(
-                    chat=chat,
-                    role=ChatMessage.Role.ASSISTANT,
-                    content=paragraph_content,
-                    suggestion1=suggestions[0] if len(suggestions) > 0 else None,
-                    suggestion2=suggestions[1] if len(suggestions) > 1 else None,
-                )
-                ai_messages.append(ai_message)
+        # CORREÇÃO: Usa o content se existir, senão usa fallback
+        ai_prompt_text = user_message.content if user_message.content else \
+            f"Analyze this file: {user_message.original_filename}"
 
-            if ai_messages:
-                # Atualiza o timestamp do chat para a última resposta da IA
-                chat.last_message_at = ai_messages[-1].created_at
-                chat.save()
-            
-            # 4. Prepara a resposta com TODAS as mensagens (a do anexo + as da IA)
-            all_new_messages = [user_message] + ai_messages
-            
-            # 5. Serializa a LISTA com o serializer de LEITURA (ChatMessageSerializer)
-            # É crucial passar many=True e o contexto (para as URLs)
-            read_serializer = ChatMessageSerializer(all_new_messages, many=True, context={'request': request})
-            headers = self.get_success_headers(read_serializer.data)
-            
-            # 6. Retorna a lista completa para o frontend
-            return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        # 3. Chama a IA COM O OBJETO user_message
+        ai_response_data = get_ai_response(chat.id, ai_prompt_text, user_message_obj=user_message)
 
-        except DRFValidationError as e:
-            # Retorna erros de validação (tamanho, chat arquivado, etc.)
-            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        # Define uma resposta padrão caso a IA falhe
+        ai_content = ai_response_data.get('content', f"I received your file: {user_message.original_filename}")
+        ai_suggestions = ai_response_data.get('suggestions', [])
+
+        paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
+        ai_messages = []
+
+        for i, paragraph_content in enumerate(paragraphs):
+            is_first_paragraph = i == 0
+            suggestions = ai_suggestions if is_first_paragraph else []
+
+            ai_message = ChatMessage.objects.create(
+                chat=chat,
+                role=ChatMessage.Role.ASSISTANT,
+                content=paragraph_content,
+                suggestion1=suggestions[0] if len(suggestions) > 0 else None,
+                suggestion2=suggestions[1] if len(suggestions) > 1 else None,
+            )
+            ai_messages.append(ai_message)
+
+        if ai_messages:
+            chat.last_message_at = ai_messages[-1].created_at
+            chat.save()
+
+        # 4. Prepara a resposta com TODAS as mensagens (CORRIGIDO)
+        all_new_messages = [user_message] + ai_messages
+
+        # 5. Serializa com o serializer de LEITURA
+        read_serializer = ChatMessageSerializer(all_new_messages, many=True, context={'request': request})
+        headers = self.get_success_headers(read_serializer.data)
+
+        # 6. Retorna a lista completa
+        print(f"[ChatMessageAttachmentView] Returning {len(read_serializer.data)} messages")
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    except DRFValidationError as e:
+        print(f"[ChatMessageAttachmentView] Validation error: {e.detail}")
+        return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        print(f"[ChatMessageAttachmentView] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {"detail": "An error occurred while processing the attachment."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
 class ArchiveChatView(APIView):
     # ... (sem alterações) ...
     permission_classes = [permissions.IsAuthenticated]

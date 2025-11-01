@@ -67,5 +67,11 @@ class ChatMessageAttachmentSerializer(serializers.ModelSerializer):
         # role, attachment_type, original_filename serão definidos na view
         read_only_fields = ('id', 'chat', 'role', 'created_at',
                             'attachment_type', 'original_filename')
+    def validate_attachment(self, value):
+        # Validação existente...
+        MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+        if value.size > MAX_UPLOAD_SIZE:
+            raise serializers.ValidationError(f"File size cannot exceed {MAX_UPLOAD_SIZE // (1024*1024)}MB.")
+        return value
 
     
