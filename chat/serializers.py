@@ -19,7 +19,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         # Agora: Definimos explicitamente quais campos são 'read-only'.
         # 'content' e 'role' NÃO estão aqui, permitindo que a view de 
         # mensagem de texto (`ChatMessageListView`) os salve.
-        read_only_fields = ('id', 'chat', 'created_at', 'suggestions',
+        read_only_fields = ('id', 'chat','role', 'created_at', 'suggestions',
                           'attachment_url', 'attachment_type', 'original_filename')
 
     def get_suggestions(self, obj):

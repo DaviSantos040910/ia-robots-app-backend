@@ -61,7 +61,7 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
 
         generation_config = genai.types.GenerationConfig(
             temperature=0.7,
-            max_output_tokens=2048,
+            max_output_tokens=10000,
             response_mime_type="application/json"
         )
 
