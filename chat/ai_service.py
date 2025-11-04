@@ -4,11 +4,13 @@ from google import genai
 from google.genai import types
 import os
 import json
+import mimetypes
 from django.conf import settings
 from .models import ChatMessage, Chat
 from bots.models import Bot
 import re
 import time
+
 
 # Configuração do cliente
 # Para Google AI Studio (desenvolvimento)
@@ -25,6 +27,7 @@ def get_ai_client():
     client = genai.Client(api_key=api_key)
     return client
 
+
 # Para migração futura para Vertex AI, substitua a função acima por:
 # def get_ai_client():
 #     """Cliente para Vertex AI (produção)"""
@@ -37,6 +40,7 @@ def get_ai_client():
 #         location=location
 #     )
 #     return client
+
 
 
 def generate_suggestions_for_bot(prompt: str):
@@ -74,10 +78,11 @@ Bot Instructions: "{prompt}"
     return ["Tell me more.", "What can you do?", "Give me an example."]
 
 
+
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None):
     """
     Obtém uma resposta ESTRUTURADA (resposta + sugestões) do modelo Gemini.
-    AGORA SUPORTA IMAGENS e ARQUIVOS via upload_file.
+    AGORA SUPORTA IMAGENS e ARQUIVOS enviados inline como bytes.
     Retorna um dicionário: {'content': '...', 'suggestions': [...]}
     """
     try:
@@ -90,24 +95,22 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             temperature=0.7,
             max_output_tokens=10000,
             response_mime_type="application/json",
-            system_instruction=bot.prompt
+            system_instruction=bot.prompt,
+            safety_settings=[
+                types.SafetySetting(
+                    category='HARM_CATEGORY_HARASSMENT',
+                    threshold='BLOCK_NONE'
+                ),
+                types.SafetySetting(
+                    category='HARM_CATEGORY_HATE_SPEECH',
+                    threshold='BLOCK_NONE'
+                ),
+                types.SafetySetting(
+                    category='HARM_CATEGORY_DANGEROUS_CONTENT',
+                    threshold='BLOCK_NONE'
+                ),
+            ]
         )
-        
-        # Configurações de segurança
-        safety_settings = [
-            types.SafetySetting(
-                category='HARM_CATEGORY_HARASSMENT',
-                threshold='BLOCK_NONE'
-            ),
-            types.SafetySetting(
-                category='HARM_CATEGORY_HATE_SPEECH',
-                threshold='BLOCK_NONE'
-            ),
-            types.SafetySetting(
-                category='HARM_CATEGORY_DANGEROUS_CONTENT',
-                threshold='BLOCK_NONE'
-            ),
-        ]
         
         # --- Lógica do Histórico ---
         history_qs = ChatMessage.objects.filter(chat_id=chat_id).order_by('created_at')
@@ -126,60 +129,70 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             parts = []
             
             if msg.get('content'):
-                parts.append(msg.get('content'))
+                parts.append({"text": msg.get('content')})
             
             if msg.get('attachment_type') == 'image' and msg.get('original_filename'):
-                parts.append(f"[Anexo de imagem anterior: {msg.get('original_filename')}]")
+                parts.append({"text": f"[Anexo de imagem anterior: {msg.get('original_filename')}]"})
             elif msg.get('attachment_type') == 'file' and msg.get('original_filename'):
-                parts.append(f"[Anexo de arquivo anterior: {msg.get('original_filename')}]")
+                parts.append({"text": f"[Anexo de arquivo anterior: {msg.get('original_filename')}]"})
             
             if parts:
-                gemini_history.append(types.Content(role=role, parts=parts))
+                gemini_history.append({
+                    "role": role,
+                    "parts": parts
+                })
         
         # --- Fim da Lógica do Histórico ---
         
-        # --- CONSTRÓI O PROMPT MULTIMODAL (UPLOAD UNIFICADO) ---
+        # --- CONSTRÓI O PROMPT MULTIMODAL (INLINE BYTES) ---
         input_parts_for_ai = []
         
-        # Upload unificado para IMAGENS e ARQUIVOS
+        # ✅ SOLUÇÃO: Envia imagem/arquivo como bytes inline
         if user_message_obj and user_message_obj.attachment:
             file_path = user_message_obj.attachment.path
+            original_filename = user_message_obj.original_filename
+            
             try:
-                print(f"[AI Service] Fazendo upload: {user_message_obj.original_filename}...")
+                print(f"[AI Service] Processando: {original_filename}...")
                 
-                # Upload do arquivo
-                uploaded_file = client.files.upload(path=file_path)
+                # Detecta o MIME type
+                mime_type, _ = mimetypes.guess_type(original_filename)
                 
-                # Aguarda processamento (importante para vídeos/PDFs grandes)
-                max_wait_time = 60  # Timeout de 60 segundos
-                wait_time = 0
+                if not mime_type and user_message_obj.attachment_type == 'image':
+                    _, ext = os.path.splitext(original_filename)
+                    ext_lower = ext.lower()
+                    mime_map = {
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.png': 'image/png',
+                        '.gif': 'image/gif',
+                        '.webp': 'image/webp',
+                        '.bmp': 'image/bmp'
+                    }
+                    mime_type = mime_map.get(ext_lower, 'image/jpeg')
                 
-                while uploaded_file.state == "PROCESSING":
-                    if wait_time >= max_wait_time:
-                        print(f"[AI Service] Timeout ao processar arquivo após {max_wait_time}s")
-                        raise TimeoutError(f"File processing timeout after {max_wait_time}s")
-                    
-                    print(f"[AI Service] Aguardando processamento... ({wait_time}s)")
-                    time.sleep(2)
-                    wait_time += 2
-                    uploaded_file = client.files.get(name=uploaded_file.name)
+                print(f"[AI Service] MIME type: {mime_type}")
                 
-                if uploaded_file.state == "ACTIVE":
-                    input_parts_for_ai.append(types.Part.from_uri(
-                        file_uri=uploaded_file.uri,
-                        mime_type=uploaded_file.mime_type
-                    ))
-                    print(f"[AI Service] Upload concluído: {uploaded_file.state}")
-                else:
-                    raise ValueError(f"File in unexpected state: {uploaded_file.state}")
+                # Lê o arquivo como bytes
+                with open(file_path, 'rb') as f:
+                    file_data = f.read()
+                
+                # Cria Part inline com bytes
+                input_parts_for_ai.append(
+                    types.Part.from_bytes(
+                        data=file_data,
+                        mime_type=mime_type
+                    )
+                )
+                print(f"[AI Service] Arquivo adicionado inline ({len(file_data)} bytes)")
                     
             except Exception as e:
-                print(f"[AI Service] Erro no upload: {e}")
+                print(f"[AI Service] Erro ao processar arquivo: {e}")
                 attachment_type_name = "imagem" if user_message_obj.attachment_type == "image" else "arquivo"
-                input_parts_for_ai.append(f"[Erro ao processar {attachment_type_name}: {user_message_obj.original_filename}]")
+                input_parts_for_ai.append({"text": f"[Erro ao processar {attachment_type_name}: {original_filename}]"})
         
         # Adiciona o texto do usuário
-        input_parts_for_ai.append(user_message_text)
+        input_parts_for_ai.append({"text": user_message_text})
         
         # Adiciona as instruções de formatação JSON
         json_instruction_prompt = """
@@ -193,18 +206,20 @@ Respond with a valid JSON object with the following structure:
   "suggestions": ["First suggestion", "Second suggestion"]
 }
 """
-        input_parts_for_ai.append(json_instruction_prompt)
+        input_parts_for_ai.append({"text": json_instruction_prompt})
         
-        # Prepara o conteúdo final
-        contents = gemini_history + [types.Content(role='user', parts=input_parts_for_ai)]
+        # Prepara o conteúdo final com estrutura correta
+        contents = gemini_history + [{
+            "role": "user",
+            "parts": input_parts_for_ai
+        }]
         
         # Envia tudo junto
         print("[AI Service] Enviando request multimodal para o Gemini...")
         response = client.models.generate_content(
             model='gemini-2.0-flash-exp',
             contents=contents,
-            config=generation_config,
-            safety_settings=safety_settings
+            config=generation_config
         )
         
         # --- PROCESSA A RESPOSTA ---
