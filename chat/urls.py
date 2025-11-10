@@ -7,7 +7,10 @@ from .views import (
     ArchiveChatView,      # New import
     ArchivedChatListView, # New import
     SetActiveChatView,
-    ChatMessageAttachmentView 
+    ChatMessageAttachmentView,
+    MessageTTSView,
+    MessageLikeToggleView
+
 )
 
 urlpatterns = [
@@ -25,4 +28,8 @@ urlpatterns = [
     path('bootstrap/bot/<int:bot_id>/', ChatBootstrapView.as_view(), name='chat-bootstrap'),
     path('<int:chat_pk>/messages/', ChatMessageListView.as_view(), name='chat-message-list-create'),
     path('<int:chat_pk>/messages/attach/', ChatMessageAttachmentView.as_view(), name='chat-message-attach'),
+    path('<int:chat_pk>/messages/<str:message_id>/tts/', MessageTTSView.as_view(), name='message-tts'),
+    path('<int:chat_pk>/messages/<str:message_id>/like/', MessageLikeToggleView.as_view(), name='message-like'),
+
+
 ]

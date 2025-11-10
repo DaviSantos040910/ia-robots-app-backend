@@ -73,6 +73,8 @@ class ChatMessage(models.Model):
     # --------------------
     suggestion1 = models.CharField(max_length=128, null=True, blank=True, help_text="First follow-up suggestion.")
     suggestion2 = models.CharField(max_length=128, null=True, blank=True, help_text="Second follow-up suggestion.")
+    liked = models.BooleanField(default=False)
+
     # -----------------------
     def __str__(self):
         if self.attachment and self.original_filename:

@@ -4,6 +4,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
 from .models import Chat, ChatMessage
+from django.conf import settings  
+import os  
+
 # Ajustar imports do serializer
 from .serializers import (
     ChatListSerializer, ChatMessageSerializer, ChatMessageAttachmentSerializer
@@ -16,6 +19,10 @@ import re
 import mimetypes # Para detectar o tipo de ficheiro
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.http import FileResponse
+from pathlib import Path
+import uuid
+from .ai_service import generate_tts_audio
 
 
 class ActiveChatListView(generics.ListAPIView):
@@ -300,3 +307,119 @@ class SetActiveChatView(APIView):
         chat_to_activate.save()
         serializer = ChatListSerializer(chat_to_activate, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+class CleanupFileResponse(FileResponse):
+    """
+    FileResponse customizado que deleta o arquivo após o envio.
+    """
+    def __init__(self, *args, cleanup_path=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cleanup_path = cleanup_path
+    
+    def close(self):
+        """
+        Sobrescreve o método close para deletar o arquivo após o envio.
+        """
+        super().close()
+        if self.cleanup_path and os.path.exists(self.cleanup_path):
+            try:
+                os.remove(self.cleanup_path)
+                print(f"[TTS Cleanup] Arquivo removido com sucesso: {self.cleanup_path}")
+            except Exception as e:
+                print(f"[TTS Cleanup] Erro ao remover arquivo: {e}")
+
+
+class MessageTTSView(APIView):
+    """
+    Gera e retorna áudio TTS para uma mensagem específica.
+    O arquivo é temporário e será apagado após o envio.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, chat_pk, message_id):
+        # Valida que a mensagem existe e pertence ao usuário
+        message = get_object_or_404(
+            ChatMessage,
+            id=message_id,
+            chat_id=chat_pk,
+            chat__user=request.user,
+            role=ChatMessage.Role.ASSISTANT  # Apenas mensagens do bot
+        )
+        
+        if not message.content:
+            return Response(
+                {"detail": "Esta mensagem não tem conteúdo de texto para gerar áudio."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Cria diretório temporário se não existir
+        temp_dir = Path(settings.MEDIA_ROOT) / 'temp_tts'
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Gera nome único para o arquivo
+        audio_filename = f"tts_{message.id}_{uuid.uuid4().hex[:8]}.wav"
+        audio_path = temp_dir / audio_filename
+        
+        try:
+            print(f"[MessageTTSView] Gerando TTS para mensagem {message_id}")
+            
+            # Gera o áudio
+            result = generate_tts_audio(message.content, str(audio_path))
+            
+            if not result['success']:
+                return Response(
+                    {"detail": f"Erro ao gerar áudio: {result.get('error', 'Unknown error')}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Abre o arquivo para enviar
+            audio_file = open(audio_path, 'rb')
+            
+            # Usa a resposta customizada que limpa o arquivo automaticamente
+            response = CleanupFileResponse(
+                audio_file,
+                content_type='audio/wav',
+                as_attachment=False,
+                filename=audio_filename,
+                cleanup_path=str(audio_path)  # Passa o caminho para limpeza
+            )
+            
+            print(f"[MessageTTSView] Enviando arquivo TTS: {audio_path}")
+            return response
+            
+        except Exception as e:
+            # Limpa o arquivo em caso de erro
+            if audio_path.exists():
+                try:
+                    audio_path.unlink()
+                    print(f"[MessageTTSView] Arquivo removido após erro: {audio_path}")
+                except Exception as cleanup_error:
+                    print(f"[MessageTTSView] Erro ao remover arquivo: {cleanup_error}")
+            
+            print(f"[MessageTTSView] Erro: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return Response(
+                {"detail": "Erro ao processar solicitação de áudio."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class MessageLikeToggleView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, chat_pk, message_id):
+        message = get_object_or_404(
+            ChatMessage,
+            id=message_id,
+            chat_id=chat_pk,
+            chat__user=request.user
+        )
+        
+        message.liked = not message.liked
+        message.save()
+        
+        return Response({'liked': message.liked}, status=status.HTTP_200_OK)

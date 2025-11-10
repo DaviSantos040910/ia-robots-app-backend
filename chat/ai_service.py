@@ -256,3 +256,79 @@ Respond with a valid JSON object with the following structure:
             'content': "An unexpected error occurred while generating a response. Please try again.",
             'suggestions': []
         }
+# chat/ai_service.py (adicionar ao final)
+
+# chat/ai_service.py (substituir a função generate_tts_audio)
+
+def generate_tts_audio(message_text: str, output_path: str) -> dict:
+    """
+    Gera áudio TTS usando Gemini 2.5 Flash TTS.
+    Retorna dict com informações do áudio gerado.
+    """
+    try:
+        import wave
+        
+        client = get_ai_client()
+        
+        print(f"[TTS Service] Gerando áudio para mensagem...")
+        
+        # ✅ CORREÇÃO: Usar modelo TTS correto
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-preview-tts',  # Modelo com suporte a TTS
+            contents=message_text,  # Texto direto, sem prefixo "TTS:"
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],  # Solicita saída de áudio
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Kore"  # Voz feminina natural
+                        )
+                    )
+                )
+            )
+        )
+        
+        # Extrai os dados de áudio da resposta
+        if not response.candidates or not response.candidates[0].content.parts:
+            raise Exception("Nenhum áudio gerado na resposta")
+        
+        audio_part = None
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                audio_part = part.inline_data
+                break
+        
+        if not audio_part:
+            raise Exception("Nenhum áudio encontrado na resposta")
+        
+        # Os dados de áudio vêm como PCM bruto
+        pcm_data = audio_part.data
+        
+        # Configurações de áudio padrão do Gemini TTS
+        sample_rate = 24000  # 24kHz
+        channels = 1  # Mono
+        sample_width = 2  # 16-bit PCM
+        
+        # Salva como arquivo WAV
+        with wave.open(output_path, 'wb') as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(sample_rate)
+            wf.writeframes(pcm_data)
+        
+        print(f"[TTS Service] Áudio salvo em: {output_path}")
+        
+        return {
+            'success': True,
+            'file_path': output_path,
+            'duration_seconds': len(pcm_data) / (sample_rate * channels * sample_width)
+        }
+        
+    except Exception as e:
+        print(f"[TTS Service] Erro ao gerar áudio: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'error': str(e)
+        }
