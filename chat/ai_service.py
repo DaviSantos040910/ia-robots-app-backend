@@ -56,7 +56,7 @@ Bot Instructions: "{prompt}"
 """
         
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model='gemini-2.5-flash',
             contents=instruction,
             config=types.GenerateContentConfig(
                 temperature=0.7,
@@ -217,7 +217,7 @@ Respond with a valid JSON object with the following structure:
         # Envia tudo junto
         print("[AI Service] Enviando request multimodal para o Gemini...")
         response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
+            model='gemini-2.5-flash',
             contents=contents,
             config=generation_config
         )
