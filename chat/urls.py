@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     ActiveChatListView, # Renamed from ChatListCreateView
     ChatMessageListView, 
+    AudioTranscriptionView,
     ChatBootstrapView,
     ArchiveChatView,      # New import
     ArchivedChatListView, # New import
@@ -30,6 +31,6 @@ urlpatterns = [
     path('<int:chat_pk>/messages/attach/', ChatMessageAttachmentView.as_view(), name='chat-message-attach'),
     path('<int:chat_pk>/messages/<str:message_id>/tts/', MessageTTSView.as_view(), name='message-tts'),
     path('<int:chat_pk>/messages/<str:message_id>/like/', MessageLikeToggleView.as_view(), name='message-like'),
-
+    path('<int:chat_pk>/transcribe/', AudioTranscriptionView.as_view(), name='audio-transcription'),
 
 ]

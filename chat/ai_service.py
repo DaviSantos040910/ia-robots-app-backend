@@ -10,10 +10,11 @@ from .models import ChatMessage, Chat
 from bots.models import Bot
 import re
 import time
-
+from django.core.files.uploadedfile import UploadedFile
+import tempfile
+from pathlib import Path
 
 # Configuração do cliente
-# Para Google AI Studio (desenvolvimento)
 def get_ai_client():
     """
     Retorna o cliente configurado.
@@ -28,25 +29,12 @@ def get_ai_client():
     return client
 
 
-# Para migração futura para Vertex AI, substitua a função acima por:
-# def get_ai_client():
-#     """Cliente para Vertex AI (produção)"""
-#     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-#     location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-#     
-#     client = genai.Client(
-#         vertexai=True,
-#         project=project_id,
-#         location=location
-#     )
-#     return client
-
-
-
 def generate_suggestions_for_bot(prompt: str):
+    """
+    Gera 3 sugestões de conversa para um bot baseado em seu prompt
+    """
     try:
         client = get_ai_client()
-        
         instruction = f"""
 Based on the following bot's instructions, generate exactly three short, engaging, and distinct conversation starters (under 10 words each).
 The user will see these as suggestion chips to start the conversation.
@@ -71,12 +59,11 @@ Bot Instructions: "{prompt}"
         if isinstance(suggestions, list) and len(suggestions) > 0 and all(isinstance(s, str) for s in suggestions):
             # Retorna apenas as 3 primeiras, caso a IA envie mais
             return suggestions[:3]
-            
+    
     except Exception as e:
         print(f"Could not generate suggestions: {e}")
     
     return ["Tell me more.", "What can you do?", "Give me an example."]
-
 
 
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None):
@@ -142,8 +129,6 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
                     "parts": parts
                 })
         
-        # --- Fim da Lógica do Histórico ---
-        
         # --- CONSTRÓI O PROMPT MULTIMODAL (INLINE BYTES) ---
         input_parts_for_ai = []
         
@@ -184,8 +169,9 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
                         mime_type=mime_type
                     )
                 )
+                
                 print(f"[AI Service] Arquivo adicionado inline ({len(file_data)} bytes)")
-                    
+            
             except Exception as e:
                 print(f"[AI Service] Erro ao processar arquivo: {e}")
                 attachment_type_name = "imagem" if user_message_obj.attachment_type == "image" else "arquivo"
@@ -232,13 +218,14 @@ Respond with a valid JSON object with the following structure:
                     'content': response_data.get('response', "Sorry, I couldn't generate a response."),
                     'suggestions': response_data.get('suggestions', [])
                 }
-                
+            
             except json.JSONDecodeError as json_err:
                 print(f"Gemini JSON parse error: {json_err}. Raw text: {response.text}")
                 return {
                     'content': response.text,
                     'suggestions': []
                 }
+        
         else:
             reason = "UNKNOWN"
             if response.candidates and len(response.candidates) > 0:
@@ -249,16 +236,105 @@ Respond with a valid JSON object with the following structure:
                 'content': "My response was blocked. Please try a different message.",
                 'suggestions': []
             }
-            
+    
     except Exception as e:
         print(f"An error occurred in Gemini AI service: {e}")
         return {
             'content': "An unexpected error occurred while generating a response. Please try again.",
             'suggestions': []
         }
-# chat/ai_service.py (adicionar ao final)
 
-# chat/ai_service.py (substituir a função generate_tts_audio)
+
+def transcribe_audio_gemini(audio_file: UploadedFile) -> dict:
+    """
+    Transcreve áudio usando Google Gemini API
+    
+    Args:
+        audio_file: Arquivo de áudio enviado pelo usuário
+    
+    Returns:
+        dict: {'success': bool, 'transcription': str, 'error': str (opcional)}
+    """
+    try:
+        print(f"[Gemini Transcription] Iniciando transcrição de: {audio_file.name}")
+        print(f"[Gemini Transcription] Tamanho do arquivo: {audio_file.size} bytes")
+        
+        client = get_ai_client()
+        
+        # Lê os bytes do arquivo de áudio
+        audio_bytes = audio_file.read()
+        
+        # Determina o MIME type do áudio
+        mime_type, _ = mimetypes.guess_type(audio_file.name)
+        
+        # Se não conseguir detectar, tenta pela extensão
+        if not mime_type:
+            _, ext = os.path.splitext(audio_file.name)
+            ext_lower = ext.lower()
+            
+            # Mapeamento de extensões de áudio comuns
+            audio_mime_map = {
+                '.m4a': 'audio/m4a',
+                '.mp3': 'audio/mp3',
+                '.wav': 'audio/wav',
+                '.aac': 'audio/aac',
+                '.ogg': 'audio/ogg',
+                '.flac': 'audio/flac',
+                '.3gp': 'audio/3gpp',
+                '.webm': 'audio/webm'
+            }
+            
+            mime_type = audio_mime_map.get(ext_lower, 'audio/m4a')
+        
+        print(f"[Gemini Transcription] MIME type detectado: {mime_type}")
+        
+        # Cria o part do áudio inline
+        audio_part = types.Part.from_bytes(
+            data=audio_bytes,
+            mime_type=mime_type
+        )
+        
+        # Prompt para transcrição
+        prompt = "Generate a transcript of the speech in Portuguese. Return only the transcribed text, without any additional formatting or explanation."
+        
+        print("[Gemini Transcription] Enviando para API Gemini...")
+        
+        # Chama a API Gemini com o áudio inline
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                prompt,
+                audio_part
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.2,  # Baixa temperatura para transcrições mais precisas
+            )
+        )
+        
+        if response.text:
+            transcription = response.text.strip()
+            print(f"[Gemini Transcription] Transcrição bem-sucedida: {transcription[:100]}...")
+            
+            return {
+                'success': True,
+                'transcription': transcription
+            }
+        else:
+            print("[Gemini Transcription] Nenhum texto retornado na resposta")
+            return {
+                'success': False,
+                'error': 'No transcription returned from Gemini'
+            }
+    
+    except Exception as e:
+        print(f"[Gemini Transcription] Erro ao transcrever áudio: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
 
 def generate_tts_audio(message_text: str, output_path: str) -> dict:
     """
@@ -269,7 +345,6 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
         import wave
         
         client = get_ai_client()
-        
         print(f"[TTS Service] Gerando áudio para mensagem...")
         
         # ✅ CORREÇÃO: Usar modelo TTS correto
@@ -323,7 +398,7 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
             'file_path': output_path,
             'duration_seconds': len(pcm_data) / (sample_rate * channels * sample_width)
         }
-        
+    
     except Exception as e:
         print(f"[TTS Service] Erro ao gerar áudio: {e}")
         import traceback
