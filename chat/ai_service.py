@@ -13,6 +13,8 @@ import time
 from django.core.files.uploadedfile import UploadedFile
 import tempfile
 from pathlib import Path
+from django.utils import timezone 
+from datetime import timedelta 
 
 # Configuração do cliente
 def get_ai_client():
@@ -52,8 +54,10 @@ Bot Instructions: "{prompt}"
             )
         )
         
-        # Limpa a resposta antes de fazer o parse do JSON
-        cleaned_response = re.sub(r'^``````$', '', response.text.strip(), flags=re.MULTILINE)
+        # ✅ CORREÇÃO 3: Limpa a resposta de forma mais robusta
+        cleaned_response = re.sub(r'^```(json)?\n', '', response.text.strip(), flags=re.MULTILINE)
+        cleaned_response = re.sub(r'\n```$', '', cleaned_response.strip(), flags=re.MULTILINE)
+        
         suggestions = json.loads(cleaned_response)
         
         if isinstance(suggestions, list) and len(suggestions) > 0 and all(isinstance(s, str) for s in suggestions):
@@ -69,7 +73,9 @@ Bot Instructions: "{prompt}"
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None):
     """
     Obtém uma resposta ESTRUTURADA (resposta + sugestões) do modelo Gemini.
-    AGORA SUPORTA IMAGENS e ARQUIVOS enviados inline como bytes.
+    AGORA SUPORTA MÚLTIPLOS ANEXOS (imagens/arquivos) enviados
+    antes do prompt de texto.
+    
     Retorna um dicionário: {'content': '...', 'suggestions': [...]}
     """
     try:
@@ -99,91 +105,114 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             ]
         )
         
-        # --- Lógica do Histórico ---
-        history_qs = ChatMessage.objects.filter(chat_id=chat_id).order_by('created_at')
-        if user_message_obj:
-            history_qs = history_qs.exclude(id=user_message_obj.id)
+        # --- LÓGICA DE HISTÓRICO E PROMPT ATUALIZADA ---
         
-        history = history_qs.order_by('-created_at')[:10].values('role', 'content', 'original_filename', 'attachment_type')
-        history = reversed(history)
+        # 1. Encontra a última mensagem do assistente
+        last_assistant_message = ChatMessage.objects.filter(
+            chat_id=chat_id, 
+            role=ChatMessage.Role.ASSISTANT
+        ).order_by('-created_at').first()
+        
+        # Define o "ponto de corte": mensagens mais novas que isso são o PROMPT ATUAL
+        if last_assistant_message:
+            since_timestamp = last_assistant_message.created_at
+        else:
+            # Se a IA nunca falou, usa o início do chat
+            since_timestamp = chat.created_at - timedelta(seconds=1) 
+
+        # 2. Busca o HISTÓRICO (mensagens ANTES do ponto de corte)
+        history_qs = ChatMessage.objects.filter(
+            chat_id=chat_id, 
+            created_at__lt=since_timestamp
+        ).order_by('-created_at')[:10] # Pega as 10 mais antigas
+        
+        # ✅ CORREÇÃO 4: Não pegar mais 'original_filename' ou 'attachment_type'
+        history_values = history_qs.values('role', 'content') 
+        history_values = reversed(history_values) # Re-ordena para (mais antigo -> mais novo)
         
         gemini_history = []
-        for msg in history:
+        for msg in history_values:
             if "An unexpected error occurred" in msg.get('content', ''):
                 continue
             
             role = 'user' if msg.get('role') == 'user' else 'model'
             parts = []
             
+            # Só adiciona o conteúdo de TEXTO ao histórico
             if msg.get('content'):
                 parts.append({"text": msg.get('content')})
             
-            if msg.get('attachment_type') == 'image' and msg.get('original_filename'):
-                parts.append({"text": f"[Anexo de imagem anterior: {msg.get('original_filename')}]"})
-            elif msg.get('attachment_type') == 'file' and msg.get('original_filename'):
-                parts.append({"text": f"[Anexo de arquivo anterior: {msg.get('original_filename')}]"})
+            # ✅ CORREÇÃO 4: Lógica de placeholder de anexo REMOVIDA
+            # Não adicionamos mais placeholders de anexos antigos.
+            # Isso impede que a IA fique confusa em prompts futuros (como "Oi").
             
             if parts:
                 gemini_history.append({
                     "role": role,
                     "parts": parts
                 })
-        
-        # --- CONSTRÓI O PROMPT MULTIMODAL (INLINE BYTES) ---
+
+        # 3. Busca o PROMPT ATUAL (mensagens DEPOIS do ponto de corte)
+        # Isso inclui todas as imagens/arquivos + a mensagem de texto final
+        prompt_messages_qs = ChatMessage.objects.filter(
+            chat_id=chat_id,
+            role=ChatMessage.Role.USER,
+            created_at__gte=since_timestamp
+        ).order_by('created_at') # Garante a ordem correta (Img1, Img2, Texto)
+
+        # --- CONSTRÓI O PROMPT MULTIMODAL (COM MÚLTIPLOS ARQUIVOS) ---
         input_parts_for_ai = []
         
-        # ✅ SOLUÇÃO: Envia imagem/arquivo como bytes inline
-        if user_message_obj and user_message_obj.attachment:
-            file_path = user_message_obj.attachment.path
-            original_filename = user_message_obj.original_filename
-            
-            try:
-                print(f"[AI Service] Processando: {original_filename}...")
+        for user_msg in prompt_messages_qs:
+            # Processa ANEXOS de CADA mensagem do prompt
+            if user_msg.attachment and user_msg.attachment.path:
+                file_path = user_msg.attachment.path
+                original_filename = user_msg.original_filename
                 
-                # Detecta o MIME type
-                mime_type, _ = mimetypes.guess_type(original_filename)
-                
-                if not mime_type and user_message_obj.attachment_type == 'image':
-                    _, ext = os.path.splitext(original_filename)
-                    ext_lower = ext.lower()
-                    mime_map = {
-                        '.jpg': 'image/jpeg',
-                        '.jpeg': 'image/jpeg',
-                        '.png': 'image/png',
-                        '.gif': 'image/gif',
-                        '.webp': 'image/webp',
-                        '.bmp': 'image/bmp'
-                    }
-                    mime_type = mime_map.get(ext_lower, 'image/jpeg')
-                
-                print(f"[AI Service] MIME type: {mime_type}")
-                
-                # Lê o arquivo como bytes
-                with open(file_path, 'rb') as f:
-                    file_data = f.read()
-                
-                # Cria Part inline com bytes
-                input_parts_for_ai.append(
-                    types.Part.from_bytes(
-                        data=file_data,
-                        mime_type=mime_type
+                try:
+                    print(f"[AI Service] Processando anexo para prompt: {original_filename}...")
+                    
+                    mime_type, _ = mimetypes.guess_type(original_filename)
+                    
+                    if not mime_type and user_msg.attachment_type == 'image':
+                        _, ext = os.path.splitext(original_filename)
+                        ext_lower = ext.lower()
+                        mime_map = {
+                            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                            '.png': 'image/png', '.gif': 'image/gif',
+                            '.webp': 'image/webp', '.bmp': 'image/bmp'
+                        }
+                        mime_type = mime_map.get(ext_lower, 'image/jpeg')
+                    
+                    print(f"[AI Service] MIME type: {mime_type}")
+                    
+                    with open(file_path, 'rb') as f:
+                        file_data = f.read()
+                    
+                    input_parts_for_ai.append(
+                        types.Part.from_bytes(
+                            data=file_data,
+                            mime_type=mime_type
+                        )
                     )
-                )
+                    print(f"[AI Service] Arquivo adicionado inline ({len(file_data)} bytes)")
                 
-                print(f"[AI Service] Arquivo adicionado inline ({len(file_data)} bytes)")
+                except Exception as e:
+                    print(f"[AI Service] Erro ao processar arquivo: {e}")
+                    attachment_type_name = "imagem" if user_msg.attachment_type == "image" else "arquivo"
+                    input_parts_for_ai.append({"text": f"[Erro ao processar {attachment_type_name}: {original_filename}]"})
             
-            except Exception as e:
-                print(f"[AI Service] Erro ao processar arquivo: {e}")
-                attachment_type_name = "imagem" if user_message_obj.attachment_type == "image" else "arquivo"
-                input_parts_for_ai.append({"text": f"[Erro ao processar {attachment_type_name}: {original_filename}]"})
-        
-        # Adiciona o texto do usuário
-        input_parts_for_ai.append({"text": user_message_text})
-        
-        # Adiciona as instruções de formatação JSON
+            # Adiciona o TEXTO da mensagem (se houver)
+            # A mensagem final (ex: "O que são essas imagens?") será adicionada aqui.
+            if user_msg.content:
+                input_parts_for_ai.append({"text": user_msg.content})
+
+
+        # Adiciona as instruções de formatação JSON no final
         json_instruction_prompt = """
 Based on the user's message (and any attached image/file) and the conversation history, provide a helpful response.
 If a file or image was provided, base your response on its content (e.g., summarize the PDF, describe the image, answer questions about the text file).
+If MULTIPLE images/files were provided, analyze them all together to answer the user's text prompt.
 Also, generate exactly two distinct, short, and relevant follow-up suggestions (under 10 words each) that the user might ask next.
 
 Respond with a valid JSON object with the following structure:
@@ -211,7 +240,13 @@ Respond with a valid JSON object with the following structure:
         # --- PROCESSA A RESPOSTA ---
         if response.text:
             try:
-                cleaned_text = re.sub(r'^``````$', '', response.text.strip(), flags=re.MULTILINE)
+                # ✅ CORREÇÃO 3: Limpeza de JSON mais robusta
+                cleaned_text = response.text.strip()
+                # Remove ```json e ```
+                cleaned_text = re.sub(r'^```(json)?\s*', '', cleaned_text, flags=re.MULTILINE)
+                cleaned_text = re.sub(r'\s*```$', '', cleaned_text, flags=re.MULTILINE)
+                cleaned_text = cleaned_text.strip() # Remove qualquer espaço em branco extra
+                
                 response_data = json.loads(cleaned_text)
                 
                 return {
@@ -221,8 +256,11 @@ Respond with a valid JSON object with the following structure:
             
             except json.JSONDecodeError as json_err:
                 print(f"Gemini JSON parse error: {json_err}. Raw text: {response.text}")
+                # Se falhar o parse, retorna o texto bruto (sem o lixo do markdown)
+                cleaned_text = re.sub(r'^```(json)?\n', '', response.text.strip(), flags=re.MULTILINE)
+                cleaned_text = re.sub(r'\n```$', '', cleaned_text.strip(), flags=re.MULTILINE)
                 return {
-                    'content': response.text,
+                    'content': cleaned_text,
                     'suggestions': []
                 }
         

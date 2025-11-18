@@ -145,8 +145,8 @@ class ChatMessageListView(generics.ListCreateAPIView):
         chat.last_message_at = timezone.now()
         chat.save()
 
-        # Obtém resposta da IA
-        ai_response_data = get_ai_response(chat_id, user_message.content)
+        # Obtém resposta da IA (passando o objeto da mensagem de texto)
+        ai_response_data = get_ai_response(chat_id, user_message.content, user_message_obj=user_message)
         ai_content = ai_response_data.get('content')
         ai_suggestions = ai_response_data.get('suggestions', [])
 
@@ -187,6 +187,8 @@ class ChatMessageListView(generics.ListCreateAPIView):
 
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
+
+# chat/views.py
 
 class ChatMessageAttachmentView(generics.CreateAPIView):
     """
@@ -236,6 +238,7 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
             chat.save()
 
             return message
+
         except DjangoValidationError as e:
             raise DRFValidationError(e.message_dict)
         except Exception as e:
@@ -246,72 +249,28 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
             )
 
     def create(self, request, *args, **kwargs):
-        """Processa upload e obtém resposta da IA"""
+        """
+        Processa o upload, mas NÃO obtém resposta da IA.
+        A IA só será chamada quando uma mensagem de TEXTO for enviada.
+        """
         try:
-            # Valida e salva mensagem do anexo
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             user_message = self.perform_create(serializer)
 
-            chat = user_message.chat
-
-            # Prepara prompt para IA
-            ai_prompt_text = user_message.content if user_message.content else \
-                f"Analyze this file: {user_message.original_filename}"
-
-            # Chama IA com o objeto da mensagem
-            ai_response_data = get_ai_response(
-                chat.id, 
-                ai_prompt_text, 
-                user_message_obj=user_message
-            )
-
-            ai_content = ai_response_data.get(
-                'content',
-                f"I received your file: {user_message.original_filename}"
-            )
-            ai_suggestions = ai_response_data.get('suggestions', [])
-
-            # Divide resposta em parágrafos
-            paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
-            if not paragraphs:
-                paragraphs = ["..."]
-
-            # Cria mensagens de resposta da IA
-            ai_messages = []
-            total_paragraphs = len(paragraphs)
-
-            for i, paragraph_content in enumerate(paragraphs):
-                is_last_paragraph = i == (total_paragraphs - 1)
-                suggestions = ai_suggestions if is_last_paragraph else []
-
-                ai_message = ChatMessage.objects.create(
-                    chat=chat,
-                    role=ChatMessage.Role.ASSISTANT,
-                    content=paragraph_content,
-                    suggestion1=suggestions[0] if len(suggestions) > 0 else None,
-                    suggestion2=suggestions[1] if len(suggestions) > 1 else None,
-                )
-                ai_messages.append(ai_message)
-
-            # Atualiza timestamp
-            if ai_messages:
-                chat.last_message_at = ai_messages[-1].created_at
-                chat.save()
-
-            # Prepara resposta completa
-            all_new_messages = [user_message] + ai_messages
+            # ✅ CORREÇÃO CRÍTICA: Passar o 'context' para o serializador
+            # Isso garante que o 'get_attachment_url' possa construir a URL completa
             read_serializer = ChatMessageSerializer(
-                all_new_messages,
-                many=True,
-                context={'request': request}
+                user_message,
+                context={'request': request}  # <--- ESSENCIAL PARA URLs COMPLETAS
             )
 
             headers = self.get_success_headers(read_serializer.data)
-            print(f"[ChatMessageAttachmentView] Returning {len(read_serializer.data)} messages")
+            print(f"[ChatMessageAttachmentView] Anexo salvo. ID: {user_message.id}. URL: {read_serializer.data.get('attachment_url')}")
 
+            # Retorna a mensagem do usuário como um array
             return Response(
-                read_serializer.data,
+                [read_serializer.data],
                 status=status.HTTP_201_CREATED,
                 headers=headers
             )
@@ -327,7 +286,6 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
                 {"detail": "An error occurred while processing the attachment."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class AudioTranscriptionView(APIView):
     """
