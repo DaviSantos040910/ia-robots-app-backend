@@ -15,7 +15,7 @@ from .serializers import (
 
 from bots.models import Bot
 from django.shortcuts import get_object_or_404
-from .ai_service import get_ai_response, transcribe_audio_gemini, generate_tts_audio, handle_voice_interaction
+from .ai_service import get_ai_response, transcribe_audio_gemini, generate_tts_audio, handle_voice_interaction,handle_voice_message
 from myproject.pagination import StandardMessagePagination
 import re
 import mimetypes
@@ -501,3 +501,47 @@ class VoiceInteractionView(APIView):
                 {"detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class VoiceMessageView(APIView):
+    """
+    API View para envio de mensagens de voz assíncronas (como WhatsApp).
+    Salva o áudio do usuário e opcionalmente responde com áudio.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def post(self, request, chat_pk):
+        # 1. Validação
+        chat = get_object_or_404(Chat, id=chat_pk, user=request.user)
+        
+        if chat.status != Chat.ChatStatus.ACTIVE:
+             return Response({"detail": "Chat archived."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2. Obter arquivo e flags
+        audio_file = request.FILES.get('audio')
+        if not audio_file:
+             # Tenta 'file' ou 'attachment' como fallbacks
+             audio_file = request.FILES.get('file') or request.FILES.get('attachment')
+        
+        if not audio_file:
+            return Response({"detail": "No audio file provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse do boolean. FormData envia como string "true"/"false"
+        reply_with_audio_raw = request.data.get('reply_with_audio', 'false')
+        reply_with_audio = str(reply_with_audio_raw).lower() == 'true'
+
+        try:
+            # 3. Chamar serviço
+            result = handle_voice_message(chat.id, audio_file, reply_with_audio, request.user)
+            
+            # 4. Serializar e Retornar
+            user_msg_data = ChatMessageSerializer(result['user_message'], context={'request': request}).data
+            ai_msg_data = ChatMessageSerializer(result['ai_message'], context={'request': request}).data
+            
+            return Response([user_msg_data, ai_msg_data], status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            print(f"[VoiceMessage Error] {e}")
+            import traceback
+            traceback.print_exc()
+            return Response({"detail": "Failed to process voice message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

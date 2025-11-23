@@ -11,11 +11,13 @@ from bots.models import Bot
 import re
 import time
 from django.core.files.uploadedfile import UploadedFile
+from django.core.files import File  # Importante para salvar arquivos gerados no Django
 import tempfile
 from pathlib import Path
 from django.utils import timezone 
 from datetime import timedelta 
 from django.db import transaction 
+import uuid
 
 # Configuração do cliente
 def get_ai_client():
@@ -55,7 +57,7 @@ Bot Instructions: "{prompt}"
             )
         )
         
-        # ✅ CORREÇÃO 3: Limpa a resposta de forma mais robusta
+        # Limpa a resposta de forma mais robusta
         cleaned_response = re.sub(r'^```(json)?\n', '', response.text.strip(), flags=re.MULTILINE)
         cleaned_response = re.sub(r'\n```$', '', cleaned_response.strip(), flags=re.MULTILINE)
         
@@ -74,8 +76,7 @@ Bot Instructions: "{prompt}"
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None):
     """
     Obtém uma resposta ESTRUTURADA (resposta + sugestões) do modelo Gemini.
-    AGORA SUPORTA MÚLTIPLOS ANEXOS (imagens/arquivos) enviados
-    antes do prompt de texto.
+    Suporta múltiplos anexos e histórico de conversa.
     
     Retorna um dicionário: {'content': '...', 'suggestions': [...]}
     """
@@ -106,46 +107,34 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             ]
         )
         
-        # --- LÓGICA DE HISTÓRICO E PROMPT ATUALIZADA ---
-        
-        # 1. Encontra a última mensagem do assistente
+        # 1. Encontra a última mensagem do assistente para definir o contexto
         last_assistant_message = ChatMessage.objects.filter(
             chat_id=chat_id, 
             role=ChatMessage.Role.ASSISTANT
         ).order_by('-created_at').first()
         
-        # Define o "ponto de corte": mensagens mais novas que isso são o PROMPT ATUAL
         if last_assistant_message:
             since_timestamp = last_assistant_message.created_at
         else:
-            # Se a IA nunca falou, usa o início do chat
             since_timestamp = chat.created_at - timedelta(seconds=1) 
 
         # 2. Busca o HISTÓRICO (mensagens ANTES do ponto de corte)
         history_qs = ChatMessage.objects.filter(
             chat_id=chat_id, 
             created_at__lt=since_timestamp
-        ).order_by('-created_at')[:10] # Pega as 10 mais antigas
+        ).order_by('-created_at')[:10]
         
-        # ✅ CORREÇÃO 4: Não pegar mais 'original_filename' ou 'attachment_type'
-        history_values = history_qs.values('role', 'content') 
-        history_values = reversed(history_values) # Re-ordena para (mais antigo -> mais novo)
+        history_values = reversed(history_qs.values('role', 'content'))
         
         gemini_history = []
         for msg in history_values:
-            if "An unexpected error occurred" in msg.get('content', ''):
+            if not msg.get('content') or "An unexpected error" in msg.get('content'):
                 continue
             
             role = 'user' if msg.get('role') == 'user' else 'model'
             parts = []
-            
-            # Só adiciona o conteúdo de TEXTO ao histórico
             if msg.get('content'):
                 parts.append({"text": msg.get('content')})
-            
-            # ✅ CORREÇÃO 4: Lógica de placeholder de anexo REMOVIDA
-            # Não adicionamos mais placeholders de anexos antigos.
-            # Isso impede que a IA fique confusa em prompts futuros (como "Oi").
             
             if parts:
                 gemini_history.append({
@@ -154,257 +143,149 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
                 })
 
         # 3. Busca o PROMPT ATUAL (mensagens DEPOIS do ponto de corte)
-        # Isso inclui todas as imagens/arquivos + a mensagem de texto final
         prompt_messages_qs = ChatMessage.objects.filter(
             chat_id=chat_id,
             role=ChatMessage.Role.USER,
             created_at__gte=since_timestamp
-        ).order_by('created_at') # Garante a ordem correta (Img1, Img2, Texto)
+        ).order_by('created_at')
 
-        # --- CONSTRÓI O PROMPT MULTIMODAL (COM MÚLTIPLOS ARQUIVOS) ---
         input_parts_for_ai = []
         
         for user_msg in prompt_messages_qs:
-            # Processa ANEXOS de CADA mensagem do prompt
+            # Processa ANEXOS
             if user_msg.attachment and user_msg.attachment.path:
-                file_path = user_msg.attachment.path
-                original_filename = user_msg.original_filename
-                
                 try:
-                    print(f"[AI Service] Processando anexo para prompt: {original_filename}...")
+                    file_path = user_msg.attachment.path
+                    original_filename = user_msg.original_filename or "file"
                     
                     mime_type, _ = mimetypes.guess_type(original_filename)
                     
                     if not mime_type and user_msg.attachment_type == 'image':
-                        _, ext = os.path.splitext(original_filename)
-                        ext_lower = ext.lower()
-                        mime_map = {
-                            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                            '.png': 'image/png', '.gif': 'image/gif',
-                            '.webp': 'image/webp', '.bmp': 'image/bmp'
-                        }
-                        mime_type = mime_map.get(ext_lower, 'image/jpeg')
+                        mime_type = 'image/jpeg'
                     
-                    print(f"[AI Service] MIME type: {mime_type}")
-                    
-                    with open(file_path, 'rb') as f:
-                        file_data = f.read()
-                    
-                    input_parts_for_ai.append(
-                        types.Part.from_bytes(
-                            data=file_data,
-                            mime_type=mime_type
-                        )
-                    )
-                    print(f"[AI Service] Arquivo adicionado inline ({len(file_data)} bytes)")
-                
+                    # Se for áudio, não enviamos como imagem/arquivo para análise visual, 
+                    # a menos que a IA suporte áudio nativo no contexto (Gemini 1.5 Pro suporta).
+                    # Aqui assumimos que a transcrição já virou texto no content, 
+                    # então pulamos o binário de áudio para economizar tokens, 
+                    # a menos que seja imagem/pdf.
+                    if mime_type and (mime_type.startswith('image/') or mime_type == 'application/pdf'):
+                         with open(file_path, 'rb') as f:
+                            file_data = f.read()
+                            input_parts_for_ai.append(
+                                types.Part.from_bytes(data=file_data, mime_type=mime_type)
+                            )
                 except Exception as e:
                     print(f"[AI Service] Erro ao processar arquivo: {e}")
-                    attachment_type_name = "imagem" if user_msg.attachment_type == "image" else "arquivo"
-                    input_parts_for_ai.append({"text": f"[Erro ao processar {attachment_type_name}: {original_filename}]"})
             
-            # Adiciona o TEXTO da mensagem (se houver)
-            # A mensagem final (ex: "O que são essas imagens?") será adicionada aqui.
             if user_msg.content:
                 input_parts_for_ai.append({"text": user_msg.content})
 
-
-        # Adiciona as instruções de formatação JSON no final
+        # Instrução final para formato JSON
         json_instruction_prompt = """
-Based on the user's message (and any attached image/file) and the conversation history, provide a helpful response.
-If a file or image was provided, base your response on its content (e.g., summarize the PDF, describe the image, answer questions about the text file).
-If MULTIPLE images/files were provided, analyze them all together to answer the user's text prompt.
-Also, generate exactly two distinct, short, and relevant follow-up suggestions (under 10 words each) that the user might ask next.
-
-Respond with a valid JSON object with the following structure:
+Based on the user's message and context, provide a helpful response.
+Respond with a valid JSON object:
 {
-  "response": "Your main answer to the user's message goes here.",
-  "suggestions": ["First suggestion", "Second suggestion"]
+  "response": "Your main answer goes here.",
+  "suggestions": ["Suggestion 1", "Suggestion 2"]
 }
 """
         input_parts_for_ai.append({"text": json_instruction_prompt})
         
-        # Prepara o conteúdo final com estrutura correta
         contents = gemini_history + [{
             "role": "user",
             "parts": input_parts_for_ai
         }]
         
-        # Envia tudo junto
-        print("[AI Service] Enviando request multimodal para o Gemini...")
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=contents,
             config=generation_config
         )
         
-        # --- PROCESSA A RESPOSTA ---
         if response.text:
             try:
-                # ✅ CORREÇÃO 3: Limpeza de JSON mais robusta
                 cleaned_text = response.text.strip()
-                # Remove ```json e ```
                 cleaned_text = re.sub(r'^```(json)?\s*', '', cleaned_text, flags=re.MULTILINE)
                 cleaned_text = re.sub(r'\s*```$', '', cleaned_text, flags=re.MULTILINE)
-                cleaned_text = cleaned_text.strip() # Remove qualquer espaço em branco extra
+                cleaned_text = cleaned_text.strip()
                 
                 response_data = json.loads(cleaned_text)
-                
                 return {
                     'content': response_data.get('response', "Sorry, I couldn't generate a response."),
                     'suggestions': response_data.get('suggestions', [])
                 }
-            
-            except json.JSONDecodeError as json_err:
-                print(f"Gemini JSON parse error: {json_err}. Raw text: {response.text}")
-                # Se falhar o parse, retorna o texto bruto (sem o lixo do markdown)
+            except json.JSONDecodeError:
+                # Fallback se não vier JSON válido
                 cleaned_text = re.sub(r'^```(json)?\n', '', response.text.strip(), flags=re.MULTILINE)
                 cleaned_text = re.sub(r'\n```$', '', cleaned_text.strip(), flags=re.MULTILINE)
-                return {
-                    'content': cleaned_text,
-                    'suggestions': []
-                }
-        
+                return {'content': cleaned_text, 'suggestions': []}
         else:
-            reason = "UNKNOWN"
-            if response.candidates and len(response.candidates) > 0:
-                reason = response.candidates[0].finish_reason
-            
-            print(f"Gemini response was blocked. Finish Reason: {reason}")
-            return {
-                'content': "My response was blocked. Please try a different message.",
-                'suggestions': []
-            }
+            return {'content': "My response was blocked.", 'suggestions': []}
     
     except Exception as e:
         print(f"An error occurred in Gemini AI service: {e}")
-        return {
-            'content': "An unexpected error occurred while generating a response. Please try again.",
-            'suggestions': []
-        }
+        return {'content': "An unexpected error occurred while generating a response.", 'suggestions': []}
 
 
 def transcribe_audio_gemini(audio_file: UploadedFile) -> dict:
     """
-    Transcreve áudio usando Google Gemini API
-    
-    Args:
-        audio_file: Arquivo de áudio enviado pelo usuário
-    
-    Returns:
-        dict: {'success': bool, 'transcription': str, 'error': str (opcional)}
+    Transcreve áudio usando Google Gemini API.
+    Retorna apenas o texto.
     """
     try:
-        print(f"[Gemini Transcription] Iniciando transcrição de: {audio_file.name}")
-        print(f"[Gemini Transcription] Tamanho do arquivo: {audio_file.size} bytes")
-        
         client = get_ai_client()
-        
-        # Lê os bytes do arquivo de áudio
         audio_bytes = audio_file.read()
         
-        # Determina o MIME type do áudio
         mime_type, _ = mimetypes.guess_type(audio_file.name)
-        
-        # Se não conseguir detectar, tenta pela extensão
         if not mime_type:
-            _, ext = os.path.splitext(audio_file.name)
-            ext_lower = ext.lower()
-            
-            # Mapeamento de extensões de áudio comuns
-            audio_mime_map = {
-                '.m4a': 'audio/m4a',
-                '.mp3': 'audio/mp3',
-                '.wav': 'audio/wav',
-                '.aac': 'audio/aac',
-                '.ogg': 'audio/ogg',
-                '.flac': 'audio/flac',
-                '.3gp': 'audio/3gpp',
-                '.webm': 'audio/webm'
-            }
-            
-            mime_type = audio_mime_map.get(ext_lower, 'audio/m4a')
+            # Fallback básico
+            mime_type = 'audio/m4a'
         
-        print(f"[Gemini Transcription] MIME type detectado: {mime_type}")
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+        prompt = "Generate a transcript of the speech in Portuguese. Return only the transcribed text, strictly without timestamps or speaker labels."
         
-        # Cria o part do áudio inline
-        audio_part = types.Part.from_bytes(
-            data=audio_bytes,
-            mime_type=mime_type
-        )
-        
-        # Prompt para transcrição
-        prompt = "Generate a transcript of the speech in Portuguese. Return only the transcribed text, without any additional formatting or explanation."
-        
-        print("[Gemini Transcription] Enviando para API Gemini...")
-        
-        # Chama a API Gemini com o áudio inline
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[
-                prompt,
-                audio_part
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.2,  # Baixa temperatura para transcrições mais precisas
-            )
+            contents=[prompt, audio_part],
+            config=types.GenerateContentConfig(temperature=0.2)
         )
         
         if response.text:
-            transcription = response.text.strip()
-            print(f"[Gemini Transcription] Transcrição bem-sucedida: {transcription[:100]}...")
-            
-            return {
-                'success': True,
-                'transcription': transcription
-            }
+            return {'success': True, 'transcription': response.text.strip()}
         else:
-            print("[Gemini Transcription] Nenhum texto retornado na resposta")
-            return {
-                'success': False,
-                'error': 'No transcription returned from Gemini'
-            }
+            return {'success': False, 'error': 'No transcription returned'}
     
     except Exception as e:
-        print(f"[Gemini Transcription] Erro ao transcrever áudio: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        print(f"[Transcription Error] {e}")
+        return {'success': False, 'error': str(e)}
 
 
 def generate_tts_audio(message_text: str, output_path: str) -> dict:
     """
-    Gera áudio TTS usando Gemini 2.5 Flash TTS.
-    Retorna dict com informações do áudio gerado.
+    Gera áudio TTS usando Gemini 2.5 Flash TTS e salva no output_path.
     """
     try:
         import wave
-        
         client = get_ai_client()
-        print(f"[TTS Service] Gerando áudio para mensagem...")
         
-        # ✅ CORREÇÃO: Usar modelo TTS correto
+        # Limitar tamanho do texto para evitar erros ou custos excessivos
+        safe_text = message_text[:2000] 
+
         response = client.models.generate_content(
-            model='gemini-2.5-flash-preview-tts',  # Modelo com suporte a TTS
-            contents=message_text,  # Texto direto, sem prefixo "TTS:"
+            model='gemini-2.5-flash-preview-tts',
+            contents=safe_text,
             config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],  # Solicita saída de áudio
+                response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(
                     voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name="Kore"  # Voz feminina natural
-                        )
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
                     )
                 )
             )
         )
         
-        # Extrai os dados de áudio da resposta
         if not response.candidates or not response.candidates[0].content.parts:
-            raise Exception("Nenhum áudio gerado na resposta")
+            raise Exception("Nenhum áudio gerado pela API.")
         
         audio_part = None
         for part in response.candidates[0].content.parts:
@@ -413,126 +294,143 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
                 break
         
         if not audio_part:
-            raise Exception("Nenhum áudio encontrado na resposta")
+            raise Exception("Nenhum dado de áudio encontrado (inline_data vazio).")
         
-        # Os dados de áudio vêm como PCM bruto
         pcm_data = audio_part.data
+        sample_rate = 24000
+        channels = 1
+        sample_width = 2 # 16-bit
         
-        # Configurações de áudio padrão do Gemini TTS
-        sample_rate = 24000  # 24kHz
-        channels = 1  # Mono
-        sample_width = 2  # 16-bit PCM
-        
-        # Salva como arquivo WAV
         with wave.open(output_path, 'wb') as wf:
             wf.setnchannels(channels)
             wf.setsampwidth(sample_width)
             wf.setframerate(sample_rate)
             wf.writeframes(pcm_data)
         
-        print(f"[TTS Service] Áudio salvo em: {output_path}")
-        
-        return {
-            'success': True,
-            'file_path': output_path,
-            'duration_seconds': len(pcm_data) / (sample_rate * channels * sample_width)
-        }
+        return {'success': True, 'file_path': output_path}
     
     except Exception as e:
-        print(f"[TTS Service] Erro ao gerar áudio: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        print(f"[TTS Error] {e}")
+        return {'success': False, 'error': str(e)}
+
+
 def handle_voice_interaction(chat_id: int, audio_file: UploadedFile, user) -> dict:
     """
-    Orquestra o fluxo completo de voz de forma atômica:
-    1. Transcreve o áudio (Gemini/Whisper)
-    2. Salva a mensagem do usuário com o áudio anexado
-    3. Obtém a resposta da IA baseada na transcrição
-    4. Salva a resposta da IA
+    Orquestra o fluxo de chamada AO VIVO (Voice Call):
+    1. Transcreve.
+    2. Salva user message.
+    3. Responde (texto).
+    4. Salva AI message.
+    Retorna dicionário para a UI tocar o texto via TTS nativo do app ou stream.
+    """
+    # Reutiliza a lógica base, sem gerar arquivo de áudio de resposta persistente no banco (para economizar storage em chamadas longas)
+    # Se quiser salvar o áudio da chamada também, basta mudar reply_with_audio=True
+    result = handle_voice_message(chat_id, audio_file, reply_with_audio=False, user=user)
     
-    Retorna um dicionário com os dados processados.
+    # Formata para o padrão que o frontend da VoiceCall espera
+    return {
+        "transcription": result['user_message'].content,
+        "ai_response_text": result['ai_message'].content,
+        "user_message": result['user_message'],
+        "ai_messages": [result['ai_message']]
+    }
+
+
+def handle_voice_message(chat_id: int, user_audio_file: UploadedFile, reply_with_audio: bool, user) -> dict:
+    """
+    Orquestra o fluxo de MENSAGEM DE VOZ (estilo WhatsApp):
+    1. Transcreve o áudio do usuário.
+    2. Salva a mensagem do usuário no banco (com o arquivo de áudio anexado).
+    3. Gera a resposta da IA em texto.
+    4. (Opcional) Gera o áudio da resposta da IA e anexa à mensagem da IA.
+    5. Salva a mensagem da IA.
+    
+    Retorna: {'user_message': ChatMessage, 'ai_message': ChatMessage}
     """
     
-    # Executa todas as operações de banco de dados dentro de uma transação
-    # Se algo falhar (ex: salvar mensagem da IA), tudo é revertido (exceto a chamada de API externa, claro)
     with transaction.atomic():
-        
-        # --- 1. Transcrever ---
-        # Garante que o ponteiro do arquivo está no início
-        audio_file.seek(0)
-        
-        transcription_result = transcribe_audio_gemini(audio_file)
-        
-        if not transcription_result['success']:
-            # Levanta exceção para ser capturada pela View e retornar erro 500 ou 400
-            raise Exception(f"Falha na transcrição de áudio: {transcription_result.get('error')}")
-        
-        user_transcription = transcription_result['transcription']
-        
-        # --- 2. Salvar Usuário ---
-        # Importante: Rebobinar o arquivo novamente antes de salvar no modelo,
-        # pois a função de transcrição leu o stream.
-        audio_file.seek(0)
-        
         chat = Chat.objects.get(id=chat_id)
+
+        # --- 1. Transcrição ---
+        # Garante ponteiro no início para leitura
+        user_audio_file.seek(0) 
+        
+        trans_result = transcribe_audio_gemini(user_audio_file)
+        
+        if trans_result['success']:
+            transcription = trans_result['transcription']
+        else:
+            # Se falhar, salvamos um texto de fallback para não perder o áudio enviado
+            transcription = "[Áudio recebido - Transcrição indisponível]"
+            print(f"Falha na transcrição: {trans_result.get('error')}")
+
+        # --- 2. Salvar Mensagem do Usuário ---
+        # Resetamos o ponteiro novamente antes de salvar no modelo
+        user_audio_file.seek(0)
         
         user_message = ChatMessage.objects.create(
             chat=chat,
             role=ChatMessage.Role.USER,
-            content=user_transcription,
-            attachment=audio_file,
-            attachment_type='audio', # Agora suportado pelo modelo
-            original_filename=audio_file.name
+            content=transcription,
+            attachment=user_audio_file,
+            attachment_type='audio',
+            original_filename=user_audio_file.name or "voice_message.m4a"
         )
         
-        # Atualiza timestamp do chat
         chat.last_message_at = timezone.now()
         chat.save()
-        
-        # --- 3. Gerar Resposta da IA ---
-        # Passamos a transcrição como o texto da mensagem
-        ai_response_data = get_ai_response(chat_id, user_transcription, user_message_obj=user_message)
-        ai_response_text = ai_response_data.get('content', '')
+
+        # --- 3. Gerar Resposta da IA (Texto) ---
+        # Usamos o texto transcrito como prompt
+        ai_response_data = get_ai_response(chat_id, transcription, user_message_obj=user_message)
+        ai_text = ai_response_data.get('content', '')
         ai_suggestions = ai_response_data.get('suggestions', [])
-        
-        # --- 4. Salvar IA ---
-        # Lógica para quebrar em parágrafos se necessário (consistência com ChatMessageListView)
-        ai_messages = []
-        
-        if ai_response_text:
-            paragraphs = re.split(r'\n{2,}', ai_response_text.strip())
-            if not paragraphs:
-                paragraphs = ["..."]
-            
-            total_paragraphs = len(paragraphs)
-            
-            for i, paragraph_content in enumerate(paragraphs):
-                is_last_paragraph = i == (total_paragraphs - 1)
-                # Adiciona sugestões apenas na última bolha de mensagem
-                current_suggestions = ai_suggestions if is_last_paragraph else []
+
+        # Instancia a mensagem (ainda não salva) para poder anexar arquivo se necessário
+        ai_message = ChatMessage(
+            chat=chat,
+            role=ChatMessage.Role.ASSISTANT,
+            content=ai_text,
+            suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
+            suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
+        )
+
+        # --- 4. Gerar Áudio da Resposta (TTS) ---
+        if reply_with_audio and ai_text and len(ai_text.strip()) > 0:
+            try:
+                # Cria arquivo temporário seguro
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
+                    temp_path = temp_audio_file.name
                 
-                ai_message = ChatMessage.objects.create(
-                    chat=chat,
-                    role=ChatMessage.Role.ASSISTANT,
-                    content=paragraph_content,
-                    suggestion1=current_suggestions[0] if len(current_suggestions) > 0 else None,
-                    suggestion2=current_suggestions[1] if len(current_suggestions) > 1 else None,
-                )
-                ai_messages.append(ai_message)
-            
-            # Atualiza timestamp novamente com a resposta da IA
-            chat.last_message_at = timezone.now()
-            chat.save()
-            
-        # --- Retorno ---
-        # Retornamos os dados brutos e os objetos criados para serialização na View
+                # Gera o áudio no arquivo temporário
+                tts_result = generate_tts_audio(ai_text, temp_path)
+                
+                if tts_result['success']:
+                    # Abre o arquivo temporário e salva no campo FileField do Django
+                    with open(temp_path, 'rb') as f:
+                        # Gera nome único para o arquivo no storage
+                        filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
+                        
+                        # Salva o conteúdo no modelo. save=False pois salvaremos o objeto inteiro depois.
+                        ai_message.attachment.save(filename, File(f), save=False)
+                        ai_message.attachment_type = 'audio'
+                        ai_message.original_filename = "voice_reply.wav"
+                
+                # Remove o arquivo temporário do sistema de arquivos local
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+            except Exception as e:
+                print(f"Erro ao gerar/salvar áudio de resposta: {e}")
+                # Segue sem áudio se der erro
+
+        # --- 5. Salvar Mensagem da IA ---
+        ai_message.save()
+        
+        chat.last_message_at = timezone.now()
+        chat.save()
+
         return {
-            "transcription": user_transcription, # Chave 'transcription' conforme esperado pelo frontend (chatService.ts: line 126)
-            "ai_response_text": ai_response_text,
             "user_message": user_message,
-            "ai_messages": ai_messages
+            "ai_message": ai_message
         }
