@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 from django.utils import timezone 
 from datetime import timedelta 
+from django.db import transaction 
 
 # Configuração do cliente
 def get_ai_client():
@@ -444,4 +445,94 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
         return {
             'success': False,
             'error': str(e)
+        }
+def handle_voice_interaction(chat_id: int, audio_file: UploadedFile, user) -> dict:
+    """
+    Orquestra o fluxo completo de voz de forma atômica:
+    1. Transcreve o áudio (Gemini/Whisper)
+    2. Salva a mensagem do usuário com o áudio anexado
+    3. Obtém a resposta da IA baseada na transcrição
+    4. Salva a resposta da IA
+    
+    Retorna um dicionário com os dados processados.
+    """
+    
+    # Executa todas as operações de banco de dados dentro de uma transação
+    # Se algo falhar (ex: salvar mensagem da IA), tudo é revertido (exceto a chamada de API externa, claro)
+    with transaction.atomic():
+        
+        # --- 1. Transcrever ---
+        # Garante que o ponteiro do arquivo está no início
+        audio_file.seek(0)
+        
+        transcription_result = transcribe_audio_gemini(audio_file)
+        
+        if not transcription_result['success']:
+            # Levanta exceção para ser capturada pela View e retornar erro 500 ou 400
+            raise Exception(f"Falha na transcrição de áudio: {transcription_result.get('error')}")
+        
+        user_transcription = transcription_result['transcription']
+        
+        # --- 2. Salvar Usuário ---
+        # Importante: Rebobinar o arquivo novamente antes de salvar no modelo,
+        # pois a função de transcrição leu o stream.
+        audio_file.seek(0)
+        
+        chat = Chat.objects.get(id=chat_id)
+        
+        user_message = ChatMessage.objects.create(
+            chat=chat,
+            role=ChatMessage.Role.USER,
+            content=user_transcription,
+            attachment=audio_file,
+            attachment_type='audio', # Agora suportado pelo modelo
+            original_filename=audio_file.name
+        )
+        
+        # Atualiza timestamp do chat
+        chat.last_message_at = timezone.now()
+        chat.save()
+        
+        # --- 3. Gerar Resposta da IA ---
+        # Passamos a transcrição como o texto da mensagem
+        ai_response_data = get_ai_response(chat_id, user_transcription, user_message_obj=user_message)
+        ai_response_text = ai_response_data.get('content', '')
+        ai_suggestions = ai_response_data.get('suggestions', [])
+        
+        # --- 4. Salvar IA ---
+        # Lógica para quebrar em parágrafos se necessário (consistência com ChatMessageListView)
+        ai_messages = []
+        
+        if ai_response_text:
+            paragraphs = re.split(r'\n{2,}', ai_response_text.strip())
+            if not paragraphs:
+                paragraphs = ["..."]
+            
+            total_paragraphs = len(paragraphs)
+            
+            for i, paragraph_content in enumerate(paragraphs):
+                is_last_paragraph = i == (total_paragraphs - 1)
+                # Adiciona sugestões apenas na última bolha de mensagem
+                current_suggestions = ai_suggestions if is_last_paragraph else []
+                
+                ai_message = ChatMessage.objects.create(
+                    chat=chat,
+                    role=ChatMessage.Role.ASSISTANT,
+                    content=paragraph_content,
+                    suggestion1=current_suggestions[0] if len(current_suggestions) > 0 else None,
+                    suggestion2=current_suggestions[1] if len(current_suggestions) > 1 else None,
+                )
+                ai_messages.append(ai_message)
+            
+            # Atualiza timestamp novamente com a resposta da IA
+            chat.last_message_at = timezone.now()
+            chat.save()
+            
+        # --- Retorno ---
+        # Retornamos os dados brutos e os objetos criados para serialização na View
+        return {
+            "transcription": user_transcription, # Chave 'transcription' conforme esperado pelo frontend (chatService.ts: line 126)
+            "ai_response_text": ai_response_text,
+            "user_message": user_message,
+            "ai_messages": ai_messages
         }

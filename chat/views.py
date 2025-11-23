@@ -15,7 +15,7 @@ from .serializers import (
 
 from bots.models import Bot
 from django.shortcuts import get_object_or_404
-from .ai_service import get_ai_response, transcribe_audio_gemini, generate_tts_audio
+from .ai_service import get_ai_response, transcribe_audio_gemini, generate_tts_audio, handle_voice_interaction
 from myproject.pagination import StandardMessagePagination
 import re
 import mimetypes
@@ -447,3 +447,57 @@ class MessageLikeToggleView(APIView):
         message.liked = not message.liked
         message.save()
         return Response({'liked': message.liked}, status=status.HTTP_200_OK)
+
+class VoiceInteractionView(APIView):
+    """
+    API View para orquestrar interações de voz completas.
+    Recebe um arquivo de áudio (via Multipart), processa (STT -> LLM) e retorna os dados.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def post(self, request, chat_pk):
+        # 1. Valida se o usuário tem acesso ao chat
+        chat = get_object_or_404(Chat, id=chat_pk, user=request.user)
+        
+        # Verifica se o chat está ativo
+        if chat.status != Chat.ChatStatus.ACTIVE:
+            return Response(
+                {"detail": "This chat is archived and read-only."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 2. Recebe o arquivo de áudio
+        audio_file = request.FILES.get('audio')
+        if not audio_file:
+            return Response(
+                {"detail": "No audio file provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # 3. Chama o serviço de orquestração
+            # A função handle_voice_interaction cuida da transcrição, criação das mensagens e atomicidade
+            result = handle_voice_interaction(chat.id, audio_file, request.user)
+            
+            # 4. Serializa as mensagens criadas para retornar ao frontend
+            user_msg_serializer = ChatMessageSerializer(result['user_message'], context={'request': request})
+            ai_msgs_serializer = ChatMessageSerializer(result['ai_messages'], many=True, context={'request': request})
+            
+            # Constrói a resposta JSON
+            response_data = {
+                "transcription": result['transcription'],
+                "ai_response_text": result['ai_response_text'],
+                "user_message": user_msg_serializer.data,
+                "ai_messages": ai_msgs_serializer.data
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            # Log de erro e retorno 500
+            print(f"[Voice Interaction Error] {e}")
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

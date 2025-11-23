@@ -62,6 +62,7 @@ class ChatMessage(models.Model):
     ATTACHMENT_TYPE_CHOICES = [
         ('image', 'Image'),
         ('file', 'File'),
+        ('audio', 'Audio'),
     ]
     attachment_type = models.CharField(
         max_length=10,
