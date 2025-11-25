@@ -19,7 +19,6 @@ from datetime import timedelta
 from django.db import transaction 
 import uuid
 
-# ... (get_ai_client e generate_suggestions_for_bot permanecem iguais) ...
 def get_ai_client():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -28,7 +27,6 @@ def get_ai_client():
     return client
 
 def generate_suggestions_for_bot(prompt: str):
-    # ... (implementação anterior mantida) ...
     try:
         client = get_ai_client()
         instruction = f"""
@@ -57,7 +55,8 @@ Bot Instructions: "{prompt}"
 
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None, reply_with_audio: bool = False):
     """
-    Obtém resposta da IA. Se reply_with_audio=True, gera e retorna o caminho do áudio TTS também.
+    Obtém resposta da IA. 
+    Se reply_with_audio=True, gera o áudio TTS imediatamente e retorna o caminho.
     Retorna: {'content': str, 'suggestions': list, 'audio_path': str | None}
     """
     try:
@@ -65,7 +64,7 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
         chat = Chat.objects.select_related('bot').get(id=chat_id)
         bot = chat.bot
         
-        # ... (Configuração e Histórico mantidos iguais) ...
+        # Configuração do Modelo
         generation_config = types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=10000,
@@ -78,6 +77,7 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             ]
         )
         
+        # Histórico
         last_assistant_message = ChatMessage.objects.filter(
             chat_id=chat_id, role=ChatMessage.Role.ASSISTANT
         ).order_by('-created_at').first()
@@ -94,10 +94,12 @@ def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: Chat
             if msg.get('content'):
                 gemini_history.append({"role": role, "parts": [{"text": msg.get('content')}]})
 
+        # Contexto Atual
         prompt_messages_qs = ChatMessage.objects.filter(chat_id=chat_id, role=ChatMessage.Role.USER, created_at__gte=since_timestamp).order_by('created_at')
         input_parts_for_ai = []
         
         for user_msg in prompt_messages_qs:
+            # Anexos
             if user_msg.attachment and user_msg.attachment.path:
                 try:
                     file_path = user_msg.attachment.path
@@ -122,6 +124,8 @@ Respond with a valid JSON object:
         
         contents = gemini_history + [{"role": "user", "parts": input_parts_for_ai}]
         
+        # Chamada Gemini
+        print(f"[AI Service] Generating content... Reply with audio: {reply_with_audio}")
         response = client.models.generate_content(model='gemini-2.5-flash', contents=contents, config=generation_config)
         
         result_data = {'content': "My response was blocked.", 'suggestions': [], 'audio_path': None}
@@ -138,15 +142,21 @@ Respond with a valid JSON object:
                 cleaned_text = re.sub(r'^```(json)?\n', '', response.text.strip(), flags=re.MULTILINE)
                 result_data['content'] = re.sub(r'\n```$', '', cleaned_text.strip(), flags=re.MULTILINE)
 
-        # --- Lógica TTS Opcional ---
+        # --- TTS Generation (ATOMIC) ---
+        # Se reply_with_audio for True, geramos o arquivo AGORA, antes de retornar.
         if reply_with_audio and result_data['content']:
+            print("[AI Service] Generating TTS audio immediately...")
             try:
+                # Cria um arquivo temporário para o áudio
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
                     tts_result = generate_tts_audio(result_data['content'], temp_audio_file.name)
                     if tts_result['success']:
                         result_data['audio_path'] = tts_result['file_path']
+                        print(f"[AI Service] TTS Audio generated at: {result_data['audio_path']}")
+                    else:
+                        print(f"[AI Service] TTS Generation failed: {tts_result.get('error')}")
             except Exception as e:
-                print(f"[AI Service] Falha ao gerar TTS automático: {e}")
+                print(f"[AI Service] Exception during TTS generation: {e}")
 
         return result_data
     
@@ -154,7 +164,6 @@ Respond with a valid JSON object:
         print(f"An error occurred in Gemini AI service: {e}")
         return {'content': "An unexpected error occurred.", 'suggestions': [], 'audio_path': None}
 
-# ... (transcribe_audio_gemini, generate_tts_audio, handle_voice_interaction, handle_voice_message permanecem iguais) ...
 def transcribe_audio_gemini(audio_file: UploadedFile) -> dict:
     try:
         client = get_ai_client()
@@ -174,6 +183,7 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
     try:
         import wave
         client = get_ai_client()
+        # Limite de segurança para TTS
         safe_text = message_text[:2000] 
         response = client.models.generate_content(
             model='gemini-2.5-flash-preview-tts',
@@ -187,6 +197,7 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
         audio_part = next((p.inline_data for p in response.candidates[0].content.parts if p.inline_data), None)
         if not audio_part: raise Exception("Nenhum dado de áudio encontrado.")
         
+        # Salva os dados PCM como WAV
         with wave.open(output_path, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
@@ -207,13 +218,19 @@ def handle_voice_interaction(chat_id: int, audio_file: UploadedFile, user) -> di
     }
 
 def handle_voice_message(chat_id: int, user_audio_file: UploadedFile, reply_with_audio: bool, user) -> dict:
+    """
+    Processa mensagem de voz do usuário e gera resposta.
+    """
     with transaction.atomic():
         chat = Chat.objects.get(id=chat_id)
+        
+        # 1. Transcrever áudio do usuário
         user_audio_file.seek(0) 
         trans_result = transcribe_audio_gemini(user_audio_file)
         transcription = trans_result['transcription'] if trans_result['success'] else "[Áudio - Transcrição indisponível]"
         user_audio_file.seek(0)
         
+        # 2. Salvar mensagem do usuário
         user_message = ChatMessage.objects.create(
             chat=chat, role=ChatMessage.Role.USER, content=transcription,
             attachment=user_audio_file, attachment_type='audio', original_filename=user_audio_file.name or "voice_message.m4a"
@@ -221,29 +238,41 @@ def handle_voice_message(chat_id: int, user_audio_file: UploadedFile, reply_with
         chat.last_message_at = timezone.now()
         chat.save()
 
-        ai_response_data = get_ai_response(chat_id, transcription, user_message_obj=user_message)
+        # 3. Gerar resposta da IA (Texto + Áudio opcional)
+        # Passamos reply_with_audio=True aqui para que o get_ai_response já devolva o audio_path
+        ai_response_data = get_ai_response(chat_id, transcription, user_message_obj=user_message, reply_with_audio=reply_with_audio)
+        
         ai_text = ai_response_data.get('content', '')
         ai_suggestions = ai_response_data.get('suggestions', [])
+        audio_path = ai_response_data.get('audio_path')
 
+        # 4. Criar mensagem da IA (Atômica)
         ai_message = ChatMessage(
-            chat=chat, role=ChatMessage.Role.ASSISTANT, content=ai_text,
+            chat=chat, 
+            role=ChatMessage.Role.ASSISTANT, 
+            content=ai_text,
             suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
             suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
         )
 
-        if reply_with_audio and ai_text:
+        if audio_path and os.path.exists(audio_path):
+            # Se temos áudio, configuramos a mensagem como 'audio' IMEDIATAMENTE
+            print(f"[Handle Voice] Attaching audio response: {audio_path}")
             try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
-                    tts_result = generate_tts_audio(ai_text, temp_audio_file.name)
-                    if tts_result['success']:
-                        with open(temp_audio_file.name, 'rb') as f:
-                            filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
-                            ai_message.attachment.save(filename, File(f), save=False)
-                            ai_message.attachment_type = 'audio'
-                            ai_message.original_filename = "voice_reply.wav"
-                        os.remove(temp_audio_file.name)
-            except Exception as e: print(f"Erro TTS: {e}")
+                with open(audio_path, 'rb') as f:
+                    filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
+                    # O save=False no FileField evita um save() extra no banco, mas prepara o arquivo
+                    ai_message.attachment.save(filename, File(f), save=False)
+                    ai_message.attachment_type = 'audio'
+                    ai_message.original_filename = "voice_reply.wav"
+                
+                # Limpeza do arquivo temporário
+                os.remove(audio_path)
+            except Exception as e:
+                print(f"[Handle Voice] Error attaching audio: {e}")
+                ai_message.attachment_type = None # Fallback para texto se der erro no anexo
 
+        # Salva a mensagem final da IA
         ai_message.save()
         chat.last_message_at = timezone.now()
         chat.save()
