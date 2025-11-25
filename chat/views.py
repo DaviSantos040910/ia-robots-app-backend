@@ -58,6 +58,7 @@ class ChatBootstrapView(APIView):
 class ChatMessageListView(generics.ListCreateAPIView):
     """
     Lida com listagem e criação de mensagens de TEXTO.
+    Agora suporta a flag 'reply_with_audio'.
     """
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -81,25 +82,26 @@ class ChatMessageListView(generics.ListCreateAPIView):
         if chat.status != Chat.ChatStatus.ACTIVE:
             return Response({"detail": "This chat is archived and read-only."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Extrai a flag reply_with_audio do corpo da requisição JSON
+        # --- NOVO: Captura a flag do corpo da requisição ---
         reply_with_audio = request.data.get('reply_with_audio', False)
 
         user_message = serializer.save(chat=chat, role=ChatMessage.Role.USER)
         chat.last_message_at = timezone.now()
         chat.save()
 
-        # Chama o serviço de IA passando a flag
+        # --- Passa a flag para o serviço de IA ---
         ai_response_data = get_ai_response(
             chat_id, 
             user_message.content, 
             user_message_obj=user_message,
-            reply_with_audio=reply_with_audio # <--- AQUI
+            reply_with_audio=reply_with_audio # <--- Flag repassada
         )
         
         ai_content = ai_response_data.get('content')
         ai_suggestions = ai_response_data.get('suggestions', [])
-        audio_path = ai_response_data.get('audio_path') # Caminho do arquivo temporário gerado
+        audio_path = ai_response_data.get('audio_path') # Caminho do arquivo gerado (se houver)
 
+        # Tratamento de parágrafos (se houver)
         paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
         if not paragraphs: paragraphs = ["..."]
 
@@ -118,15 +120,17 @@ class ChatMessageListView(generics.ListCreateAPIView):
                 suggestion2=suggestions[1] if len(suggestions) > 1 else None,
             )
 
-            # Se houver áudio gerado, anexa apenas ao último parágrafo (ou único)
+            # --- NOVO: Se houver áudio gerado, anexa à última parte da resposta ---
             if is_last_paragraph and audio_path and os.path.exists(audio_path):
                 try:
                     with open(audio_path, 'rb') as f:
+                        # Gera um nome único para o arquivo
                         filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
                         ai_message.attachment.save(filename, File(f), save=False)
                         ai_message.attachment_type = 'audio'
                         ai_message.original_filename = "voice_reply.wav"
-                    # Remove o arquivo temporário após salvar no FileField
+                    
+                    # Limpa o arquivo temporário
                     os.remove(audio_path)
                 except Exception as e:
                     print(f"Erro ao anexar áudio TTS na view: {e}")
@@ -142,6 +146,7 @@ class ChatMessageListView(generics.ListCreateAPIView):
         response_serializer = self.get_serializer(all_new_messages, many=True, context={'request': request})
 
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
 
 # ... (ChatMessageAttachmentView, AudioTranscriptionView, ArchiveChatView, SetActiveChatView, CleanupFileResponse, MessageTTSView, MessageLikeToggleView, VoiceInteractionView, VoiceMessageView permanecem iguais) ...
 class ChatMessageAttachmentView(generics.CreateAPIView):
