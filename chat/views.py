@@ -58,7 +58,7 @@ class ChatBootstrapView(APIView):
 class ChatMessageListView(generics.ListCreateAPIView):
     """
     Lida com listagem e criação de mensagens de TEXTO.
-    Agora suporta a flag 'reply_with_audio' de forma atômica.
+    Suporta flag 'reply_with_audio' atomicamente.
     """
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -82,14 +82,12 @@ class ChatMessageListView(generics.ListCreateAPIView):
         if chat.status != Chat.ChatStatus.ACTIVE:
             return Response({"detail": "This chat is archived and read-only."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Captura a flag do corpo da requisição
         reply_with_audio = request.data.get('reply_with_audio', False)
 
         user_message = serializer.save(chat=chat, role=ChatMessage.Role.USER)
         chat.last_message_at = timezone.now()
         chat.save()
 
-        # Obtém resposta da IA (incluindo áudio se solicitado)
         ai_response_data = get_ai_response(
             chat_id, 
             user_message.content, 
@@ -99,21 +97,21 @@ class ChatMessageListView(generics.ListCreateAPIView):
         
         ai_content = ai_response_data.get('content')
         ai_suggestions = ai_response_data.get('suggestions', [])
-        audio_path = ai_response_data.get('audio_path') # Caminho do arquivo gerado (se houver)
+        audio_path = ai_response_data.get('audio_path')
+        duration_ms = ai_response_data.get('duration_ms', 0) # Captura duração calculada
 
         ai_messages = []
 
-        # --- DECISÃO DE FLUXO ---
-        # Se temos um arquivo de áudio gerado com sucesso, criamos UMA mensagem atômica do tipo 'audio'.
-        # Caso contrário, seguimos o fluxo normal de parágrafos de texto.
+        # DECISÃO DE FLUXO ATÔMICA
         if audio_path and os.path.exists(audio_path):
-            # --- FLUXO ÁUDIO (ATÔMICO) ---
+            # FLUXO ÁUDIO: Mensagem única com anexo
             ai_message = ChatMessage(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
-                content=ai_content, # O texto fica como "transcrição"
+                content=ai_content,
                 suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
                 suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
+                duration=duration_ms # Salva duração no banco
             )
             
             try:
@@ -122,17 +120,15 @@ class ChatMessageListView(generics.ListCreateAPIView):
                     ai_message.attachment.save(filename, File(f), save=False)
                     ai_message.attachment_type = 'audio'
                     ai_message.original_filename = "voice_reply.wav"
-                
                 os.remove(audio_path)
             except Exception as e:
-                print(f"Erro ao anexar áudio TTS na view: {e}")
-                # Em caso de erro grave no anexo, faz fallback silencioso para texto (attachment_type default é None)
+                print(f"Erro ao anexar áudio TTS: {e}")
 
             ai_message.save()
             ai_messages.append(ai_message)
 
         else:
-            # --- FLUXO TEXTO (PARÁGRAFOS) ---
+            # FLUXO TEXTO: Parágrafos
             paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
             if not paragraphs: paragraphs = ["..."]
             
@@ -148,7 +144,6 @@ class ChatMessageListView(generics.ListCreateAPIView):
                     content=paragraph_content,
                     suggestion1=suggestions[0] if len(suggestions) > 0 else None,
                     suggestion2=suggestions[1] if len(suggestions) > 1 else None,
-                    # attachment_type permanece None/default
                 )
                 ai_message.save()
                 ai_messages.append(ai_message)
@@ -264,13 +259,29 @@ class VoiceInteractionView(APIView):
 class VoiceMessageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+    
     def post(self, request, chat_pk):
         chat = get_object_or_404(Chat, id=chat_pk, user=request.user)
         f = request.FILES.get('audio') or request.FILES.get('file') or request.FILES.get('attachment')
         if not f: return Response({"detail": "No audio."}, status=400)
+        
         reply_audio = str(request.data.get('reply_with_audio', 'false')).lower() == 'true'
+        
+        # Captura duração enviada pelo Frontend
         try:
+            user_duration = int(float(request.data.get('duration', 0)))
+        except:
+            user_duration = 0
+            
+        try:
+            # Processa áudio
             res = handle_voice_message(chat.id, f, reply_audio, request.user)
+            
+            # Atualiza duração da mensagem do usuário (já que handle_voice_message não recebe duration)
+            if user_duration > 0:
+                res['user_message'].duration = user_duration
+                res['user_message'].save()
+
             return Response([
                 ChatMessageSerializer(res['user_message'], context={'request':request}).data,
                 ChatMessageSerializer(res['ai_message'], context={'request':request}).data

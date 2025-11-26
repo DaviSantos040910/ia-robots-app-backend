@@ -71,6 +71,9 @@ class ChatMessage(models.Model):
         blank=True
     )
     original_filename = models.CharField(max_length=255, null=True, blank=True)
+
+    duration = models.IntegerField(default=0, help_text="Audio duration in milliseconds")
+
     # --------------------
     suggestion1 = models.CharField(max_length=128, null=True, blank=True, help_text="First follow-up suggestion.")
     suggestion2 = models.CharField(max_length=128, null=True, blank=True, help_text="Second follow-up suggestion.")
