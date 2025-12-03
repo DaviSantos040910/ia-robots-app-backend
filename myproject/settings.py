@@ -168,3 +168,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # The URL that will serve the media files.
 MEDIA_URL = '/media/'
+
+# --- ChromaDB Configuration (Long Term Memory) ---
+# Define onde o banco de dados vetorial será salvo localmente.
+CHROMA_DB_PATH = BASE_DIR / 'chroma_db_data'

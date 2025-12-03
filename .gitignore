@@ -19,3 +19,6 @@ db.sqlite3
 
 # Node (se tiver frontend junto)
 node_modules/
+
+# ChromaDB (Vector Database persistence)
+chroma_db_data/

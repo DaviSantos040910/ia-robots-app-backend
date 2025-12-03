@@ -9,4 +9,4 @@ sqlparse==0.5.3
 tzdata==2025.2
 google-generativeai==0.3.2 # Substitua a linha do openai por esta
 pillow==11.1.0
-
+chromadb
