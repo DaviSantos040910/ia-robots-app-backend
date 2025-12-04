@@ -76,20 +76,28 @@ def _build_conversation_history(chat_id: int, limit: int = 15, exclude_message_i
     return gemini_history, recent_texts
 
 
-def _build_system_instruction(bot_prompt: str, user_name: str, memories: list, current_time: str):
+def _build_system_instruction(bot_prompt: str, user_name: str, doc_context: str, memory_context: str, current_time: str):
     """
-    Constrói o system instruction otimizado para roleplay natural.
-    Prioridade clara: Personagem > Contexto > Memória > Regras
+    Constrói o system instruction otimizado para RAG e Roleplay.
+    Separa claramente Documentos de Memórias Pessoais.
     """
     
-    # Seção de memória (apenas se houver memórias relevantes)
+    # Seção de Base de Conhecimento (RAG)
+    knowledge_base_section = ""
+    if doc_context:
+        knowledge_base_section = f"""
+## BASE DE CONHECIMENTO (Arquivos enviados)
+Use estas informações prioritariamente para responder perguntas sobre o conteúdo dos arquivos.
+{doc_context}
+"""
+
+    # Seção de Memória Pessoal
     memory_section = ""
-    if memories:
-        memory_items = "\n".join([f"• {mem}" for mem in memories])
+    if memory_context:
         memory_section = f"""
-## MEMÓRIA DE LONGO PRAZO
-Fatos relevantes sobre {user_name} (use naturalmente, sem listar):
-{memory_items}
+## MEMÓRIA PESSOAL
+Fatos sobre {user_name} e conversas passadas:
+{memory_context}
 """
     
     return f"""# PERSONAGEM
@@ -98,20 +106,22 @@ Fatos relevantes sobre {user_name} (use naturalmente, sem listar):
 ## CONTEXTO ATUAL
 - Você está conversando com: {user_name}
 - Data/Hora: {current_time}
+{knowledge_base_section}
 {memory_section}
 ## DIRETRIZES IMPORTANTES
 
-1. **MANTENHA O PERSONAGEM** - Você É o personagem definido acima, não uma IA. Nunca quebre o personagem.
+1. **MANTENHA O PERSONAGEM** - Você É o personagem definido acima. Não quebre o personagem.
 
-2. **RESPONDA APENAS À MENSAGEM ATUAL** - Não repita informações que você já disse em mensagens anteriores. O usuário pode ver o histórico.
+2. **USE A BASE DE CONHECIMENTO** - Se a resposta estiver na 'BASE DE CONHECIMENTO', use-a. **CITE O NOME DO ARQUIVO** (ex: "De acordo com o arquivo Manual.pdf...") sempre que possível para dar credibilidade.
 
-3. **USE MEMÓRIAS SUTILMENTE** - Se souber algo sobre o usuário (como o nome do pet), mencione naturalmente em contexto apropriado, não force.
+3. **MEMÓRIA** - Use a 'MEMÓRIA PESSOAL' sutilmente para personalizar a conversa, mas não confunda fatos pessoais com dados dos documentos.
 
-4. **SEJA CONCISO E NATURAL** - Responda como uma pessoa real responderia em uma conversa. Evite respostas muito longas a menos que seja necessário.
+4. **RESPONDA APENAS À MENSAGEM ATUAL** - Não repita informações que você já disse em mensagens anteriores.
 
-5. **EVITE RECAPITULAR** - Não resuma conversas anteriores. Assuma que o usuário lembra do que foi dito. Avance a conversa.
+5. **SEJA CONCISO E NATURAL** - Responda como uma pessoa real responderia.
 
-6. **FORMATAÇÃO** - Use Markdown (negrito, listas) apenas quando realmente ajudar na clareza. Personagens casuais não usam formatação excessiva."""
+6. **FORMATAÇÃO** - Use Markdown (negrito, listas) apenas quando realmente ajudar na clareza."""
+
 
 
 def _parse_ai_response(response_text: str) -> dict:
@@ -282,123 +292,111 @@ Bot Instructions: "{prompt}"
 
 def get_ai_response(chat_id: int, user_message_text: str, user_message_obj: ChatMessage = None, reply_with_audio: bool = False):
     """
-    Obtém resposta da IA com contexto histórico e memória de longo prazo.
-    
-    Args:
-        chat_id: ID do chat
-        user_message_text: Texto da mensagem do usuário
-        user_message_obj: Objeto da mensagem (opcional, para anexos)
-        reply_with_audio: Se True, gera áudio TTS junto com a resposta
-    
-    Returns:
-        dict com 'content', 'suggestions', 'audio_path', 'duration_ms'
+    Obtém resposta da IA com contexto histórico, memória e RAG (Documentos).
     """
     try:
         client = get_ai_client()
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id)
         bot = chat.bot
         
-        # 1. Preparação dos Dados Básicos
-        user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente de IA útil e amigável."
+        # 1. Preparação Básica
+        user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente útil."
         user_name = chat.user.first_name if chat.user.first_name else "Usuário"
         current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
         
-        # 2. Construir Histórico (LINEAR - sem gaps)
+        # 2. Construir Histórico Recente (Linear)
         exclude_id = user_message_obj.id if user_message_obj else None
         gemini_history, recent_texts = _build_conversation_history(
-            chat_id, 
-            limit=12,
-            exclude_message_id=exclude_id
+            chat_id, limit=12, exclude_message_id=exclude_id
         )
         
-        # 3. Buscar Memórias (excluindo textos do histórico recente)
-        retrieved_memories = []
+        # 3. BUSCA HÍBRIDA (RAG + MEMÓRIA)
+        # Usamos o novo método search_context que criamos no passo anterior
+        doc_contexts_list = []
+        memory_contexts_list = []
+        
         try:
-            retrieved_memories = vector_service.search_memory(
+            # Busca contextos mistos sem filtrar tipo inicialmente
+            raw_contexts = vector_service.search_context(
+                query_text=user_message_text,
                 user_id=chat.user_id,
                 bot_id=bot.id,
-                query_text=user_message_text,
-                limit=4,
-                exclude_texts=recent_texts
+                limit=6 # Trazemos um pouco mais para ter chance de pegar docs e memória
             )
-            if retrieved_memories:
-                logger.info(f"[AI Service] Memória injetada: {len(retrieved_memories)} itens")
+            
+            # Classificação dos resultados baseada nas tags do VectorService
+            for item in raw_contexts:
+                if "[CONTEXTO DO ARQUIVO:" in item:
+                    doc_contexts_list.append(item)
+                else:
+                    memory_contexts_list.append(item)
+            
+            if doc_contexts_list:
+                logger.info(f"[RAG] Documentos encontrados: {len(doc_contexts_list)}")
+            if memory_contexts_list:
+                logger.info(f"[Memory] Memórias encontradas: {len(memory_contexts_list)}")
+                
         except Exception as mem_error:
-            logger.warning(f"[AI Service] Erro ao recuperar memória: {mem_error}")
+            logger.warning(f"[AI Service] Erro na busca vetorial: {mem_error}")
         
-        # 4. Construir System Instruction
+        # 4. Construir System Instruction com seções separadas
         system_instruction = _build_system_instruction(
             bot_prompt=user_defined_prompt,
             user_name=user_name,
-            memories=retrieved_memories,
+            doc_context="\n\n".join(doc_contexts_list),
+            memory_context="\n".join(memory_contexts_list),
             current_time=current_time_str
         )
         
         # 5. Configuração do Modelo
         generation_config = types.GenerateContentConfig(
-            temperature=0.8,
+            temperature=0.7, # Levemente menor para ser mais fiel aos documentos
             max_output_tokens=2500,
-            top_p=0.95,
-            system_instruction=system_instruction,
-            safety_settings=[
-                types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
-                types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
-                types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
-                types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
-            ]
+            system_instruction=system_instruction
         )
         
-        # 6. Preparar Input (mensagem atual + anexos)
+        # 6. Preparar Input (Texto + Anexos atuais)
         input_parts = []
         
-        # Processar anexos da mensagem atual
+        # Anexos da mensagem atual (imagem/pdf imediato)
         if user_message_obj and user_message_obj.attachment:
             try:
                 if hasattr(user_message_obj.attachment, 'path') and user_message_obj.attachment.path:
                     file_path = user_message_obj.attachment.path
                     if os.path.exists(file_path):
                         mime_type, _ = mimetypes.guess_type(user_message_obj.original_filename or "file")
-                        if not mime_type and user_message_obj.attachment_type == 'image':
-                            mime_type = 'image/jpeg'
+                        if not mime_type and user_message_obj.attachment_type == 'image': mime_type = 'image/jpeg'
                         
+                        # Suporte a imagem e PDF direto no prompt multimodal
                         if mime_type and (mime_type.startswith('image/') or mime_type == 'application/pdf'):
                             with open(file_path, 'rb') as f:
                                 input_parts.append(types.Part.from_bytes(data=f.read(), mime_type=mime_type))
             except Exception as e:
-                logger.warning(f"[AI Service] Erro ao processar anexo: {e}")
+                logger.warning(f"[AI Service] Erro anexo: {e}")
         
-        # Adicionar texto da mensagem com instrução de sugestões
+        # Texto do usuário com instrução de sugestão
         final_user_prompt = f"""{user_message_text}
 
 ---
-Após sua resposta, forneça 2 sugestões curtas (máx 8 palavras cada) do que eu poderia perguntar/dizer em seguida.
-Use este formato exato:
-
-[Sua resposta aqui]
-
+Após responder, forneça 2 sugestões curtas de continuação no formato:
+[Resposta]
 ---SUGESTÕES---
-1. [sugestão 1]
-2. [sugestão 2]"""
+1. [Sugestão 1]
+2. [Sugestão 2]"""
         
         input_parts.append({"text": final_user_prompt})
-        
-        # 7. Montar Contents
         contents = gemini_history + [{"role": "user", "parts": input_parts}]
         
         # 8. Chamada à API
-        logger.info(f"[AI Service] Gerando resposta... Audio: {reply_with_audio}")
+        logger.info(f"[AI Service] Gerando resposta...")
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=contents,
             config=generation_config
         )
         
-        # 9. Parse da Resposta
-        response_text = response.text if response.text else ""
-        result_data = _parse_ai_response(response_text)
-        
-        if not result_data['content']:
-            result_data['content'] = "Desculpe, minha resposta foi bloqueada."
+        # 9. Processamento da Resposta
+        result_data = _parse_ai_response(response.text if response.text else "")
         
         # 10. Salvar Memória em Background
         if result_data['content'] and len(user_message_text) > 10:
@@ -407,34 +405,22 @@ Use este formato exato:
                 args=(chat.user_id, bot.id, user_message_text, result_data['content'])
             ).start()
         
-        # 11. Gerar TTS se solicitado
+        # 11. TTS (Opcional)
         if reply_with_audio and result_data['content']:
-            logger.info("[AI Service] Gerando áudio TTS...")
             try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
-                    tts_result = generate_tts_audio(result_data['content'], temp_audio_file.name)
-                    if tts_result['success']:
-                        result_data['audio_path'] = tts_result['file_path']
-                        result_data['duration_ms'] = tts_result.get('duration_ms', 0)
-                        logger.info(f"[AI Service] TTS gerado. Duração: {result_data['duration_ms']}ms")
-                    else:
-                        logger.warning(f"[AI Service] TTS falhou: {tts_result.get('error')}")
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+                    tts = generate_tts_audio(result_data['content'], temp_audio.name)
+                    if tts['success']:
+                        result_data['audio_path'] = tts['file_path']
+                        result_data['duration_ms'] = tts.get('duration_ms', 0)
             except Exception as e:
-                logger.error(f"[AI Service] Exceção no TTS: {e}")
+                logger.error(f"[TTS Error] {e}")
         
         return result_data
         
     except Exception as e:
-        logger.error(f"Erro no serviço de IA: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'content': "Ocorreu um erro inesperado. Por favor, tente novamente.",
-            'suggestions': [],
-            'audio_path': None,
-            'duration_ms': 0
-        }
-
+        logger.error(f"Erro AI Service: {e}")
+        return {'content': "Erro ao processar resposta.", 'suggestions': [], 'audio_path': None}
 
 def transcribe_audio_gemini(audio_file: UploadedFile) -> dict:
     """Transcreve áudio usando Gemini."""

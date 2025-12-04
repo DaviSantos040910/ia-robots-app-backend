@@ -20,6 +20,24 @@ from django.http import FileResponse
 from pathlib import Path
 import uuid
 from django.core.files import File
+import threading
+from .file_processor import FileProcessor
+import logging  
+from .ai_service import vector_service
+
+logger = logging.getLogger(__name__) # <--- Definição necessária
+
+
+def process_document_background(file_path, mime_type, original_filename, user_id, bot_id):
+    """Processa documentos em background para não travar o upload."""
+    try:
+        text = FileProcessor.extract_text(file_path, mime_type)
+        if text:
+            chunks = FileProcessor.chunk_text(text)
+            vector_service.add_documents_batch(user_id, bot_id, chunks, original_filename)
+            logger.info(f"RAG: {original_filename} processado ({len(chunks)} chunks).")
+    except Exception as e:
+        logger.error(f"RAG Error em {original_filename}: {e}")
 
 # ... (ActiveChatListView, ArchivedChatListView, ChatBootstrapView permanecem iguais) ...
 class ActiveChatListView(generics.ListAPIView):
@@ -160,31 +178,69 @@ class ChatMessageListView(generics.ListCreateAPIView):
 
 # ... (O restante das views permanece igual) ...
 class ChatMessageAttachmentView(generics.CreateAPIView):
+    # ... (mantenha serializer_class, permission_classes, etc) ...
     serializer_class = ChatMessageAttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
     def create(self, request, *args, **kwargs):
         chat_id = self.kwargs['chat_pk']
         chat = get_object_or_404(Chat, id=chat_id, user=self.request.user)
-        if chat.status != Chat.ChatStatus.ACTIVE: return Response({"detail": "Archived."}, status=403)
+        
+        if chat.status != Chat.ChatStatus.ACTIVE: 
+            return Response({"detail": "Archived."}, status=403)
+            
         files = request.FILES.getlist('attachments') or ([request.FILES.get('attachment')] if request.FILES.get('attachment') else [])
-        if not files: return Response({"detail": "No files."}, status=400)
+        if not files: 
+            return Response({"detail": "No files."}, status=400)
         
         created_msgs = []
+        tasks_to_run = [] # Lista de tarefas para rodar após o commit
+
         try:
             with transaction.atomic():
                 for f in files:
                     mime, _ = mimetypes.guess_type(f.name)
+                    
+                    # Salva no banco (SQL)
                     m = self.get_serializer(data={'attachment': f, 'content': ''})
                     m.is_valid(raise_exception=True)
-                    obj = m.save(chat=chat, role=ChatMessage.Role.USER, attachment_type='image' if mime and mime.startswith('image/') else 'file', original_filename=f.name)
+                    obj = m.save(
+                        chat=chat, 
+                        role=ChatMessage.Role.USER, 
+                        attachment_type='image' if mime and mime.startswith('image/') else 'file', 
+                        original_filename=f.name
+                    )
                     created_msgs.append(obj)
+
+                    # --- DETECÇÃO PARA RAG ---
+                    # Se for um arquivo de documento (PDF, DOCX, TXT), agendamos o processamento
+                    if obj.attachment_type == 'file' and mime in ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']:
+                        tasks_to_run.append({
+                            'file_path': obj.attachment.path, # Caminho absoluto no disco
+                            'mime_type': mime,
+                            'original_filename': obj.original_filename,
+                            'user_id': chat.user.id,
+                            'bot_id': chat.bot.id
+                        })
+
                 if created_msgs:
                     chat.last_message_at = created_msgs[-1].created_at
                     chat.save()
-            return Response(ChatMessageSerializer(created_msgs, many=True, context={'request':request}).data, status=201)
-        except Exception as e: return Response({"detail": str(e)}, status=500)
 
+            # --- DISPARO ASSÍNCRONO (FORA DA TRANSAÇÃO) ---
+            for task in tasks_to_run:
+                thread = threading.Thread(
+                    target=process_document_background,
+                    kwargs=task
+                )
+                thread.daemon = True
+                thread.start()
+
+            return Response(ChatMessageSerializer(created_msgs, many=True, context={'request':request}).data, status=201)
+            
+        except Exception as e: 
+            return Response({"detail": str(e)}, status=500)
 class AudioTranscriptionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]

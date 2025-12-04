@@ -80,7 +80,7 @@ class VectorService:
                 'user_id': str(user_id),
                 'bot_id': str(bot_id),
                 'role': role,
-                'timestamp': timestamp
+                'timestamp': timestamp,
             }
 
             self.collection.add(
@@ -165,3 +165,60 @@ class VectorService:
         except Exception as e:
             logger.error(f"Erro ao buscar memória no ChromaDB: {str(e)}")
             return []
+
+    def add_documents_batch(self, user_id, bot_id, chunks, source_file_name):
+        """Adiciona documentos em lote para performance."""
+        if not self.collection or not chunks: return
+        
+        # Prepara dados
+        docs, embeds, metas, ids = [], [], [], []
+        timestamp = datetime.now().isoformat()
+        
+        for i, chunk in enumerate(chunks):
+            embedding = self._get_embedding(chunk, task_type="retrieval_document")
+            if embedding:
+                docs.append(chunk)
+                embeds.append(embedding)
+                ids.append(str(uuid.uuid4()))
+                metas.append({
+                    'user_id': str(user_id),
+                    'bot_id': str(bot_id),
+                    'type': 'document', # Diferenciador chave
+                    'source': source_file_name,
+                    'timestamp': timestamp
+                })
+        
+        # Salva em lote
+        if docs:
+            try:
+                self.collection.add(documents=docs, embeddings=embeds, metadatas=metas, ids=ids)
+                logger.info(f"Batch insert: {len(docs)} chunks de {source_file_name}")
+            except Exception as e:
+                logger.error(f"Erro batch insert: {e}")
+
+    def search_context(self, query_text, user_id, bot_id, limit=5):
+        """Busca híbrida: Retorna tanto memória quanto documentos formatados."""
+        if not self.collection: return []
+        try:
+            embedding = self._get_embedding(query_text, task_type="retrieval_query")
+            if not embedding: return []
+
+            results = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=limit,
+                where={"$and": [{"user_id": str(user_id)}, {"bot_id": str(bot_id)}]}
+            )
+
+            formatted = []
+            if results and results['documents']:
+                for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
+                    if meta.get('type') == 'document':
+                        formatted.append(f"[CONTEXTO DO ARQUIVO: {meta.get('source', 'Anexo')}]\n{doc}")
+                    else:
+                        formatted.append(f"[MEMÓRIA DE CONVERSA]\n{doc}")
+            return formatted
+        except Exception as e:
+            logger.error(f"Erro search_context: {e}")
+            return []
+
+
