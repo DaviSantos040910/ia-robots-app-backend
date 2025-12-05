@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Bot
 from .serializers import BotSerializer, BotDetailSerializer
-from chat.ai_service import generate_suggestions_for_bot # Importar a nossa nova função
+from chat.services import generate_suggestions_for_bot 
 
 class BotListCreateView(generics.ListCreateAPIView):
     """

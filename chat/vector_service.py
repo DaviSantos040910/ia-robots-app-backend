@@ -428,3 +428,6 @@ class VectorService:
             contexts.append(f"{header}\n{doc}")
         
         return contexts
+
+# Instância global singleton exportada
+vector_service = VectorService()
