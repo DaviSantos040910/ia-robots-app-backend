@@ -20,26 +20,13 @@ from django.http import FileResponse
 from pathlib import Path
 import uuid
 from django.core.files import File
-import threading
-from .file_processor import FileProcessor
 import logging  
-from .ai_service import vector_service
+from .ai_service import vector_service # Instância do serviço vetorial
+from .file_processor import FileProcessor # Novo utilitário
 
-logger = logging.getLogger(__name__) # <--- Definição necessária
+logger = logging.getLogger(__name__)
 
-
-def process_document_background(file_path, mime_type, original_filename, user_id, bot_id):
-    """Processa documentos em background para não travar o upload."""
-    try:
-        text = FileProcessor.extract_text(file_path, mime_type)
-        if text:
-            chunks = FileProcessor.chunk_text(text)
-            vector_service.add_documents_batch(user_id, bot_id, chunks, original_filename)
-            logger.info(f"RAG: {original_filename} processado ({len(chunks)} chunks).")
-    except Exception as e:
-        logger.error(f"RAG Error em {original_filename}: {e}")
-
-# ... (ActiveChatListView, ArchivedChatListView, ChatBootstrapView permanecem iguais) ...
+# ... (Outras views: ActiveChatListView, ArchivedChatListView, ChatBootstrapView, ChatMessageListView permanecem iguais) ...
 class ActiveChatListView(generics.ListAPIView):
     serializer_class = ChatListSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -74,10 +61,6 @@ class ChatBootstrapView(APIView):
         }, status=status.HTTP_200_OK)
 
 class ChatMessageListView(generics.ListCreateAPIView):
-    """
-    Lida com listagem e criação de mensagens de TEXTO.
-    Suporta flag 'reply_with_audio' atomicamente.
-    """
     serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardMessagePagination
@@ -116,22 +99,19 @@ class ChatMessageListView(generics.ListCreateAPIView):
         ai_content = ai_response_data.get('content')
         ai_suggestions = ai_response_data.get('suggestions', [])
         audio_path = ai_response_data.get('audio_path')
-        duration_ms = ai_response_data.get('duration_ms', 0) # Captura duração calculada
+        duration_ms = ai_response_data.get('duration_ms', 0)
 
         ai_messages = []
 
-        # DECISÃO DE FLUXO ATÔMICA
         if audio_path and os.path.exists(audio_path):
-            # FLUXO ÁUDIO: Mensagem única com anexo
             ai_message = ChatMessage(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
                 content=ai_content,
                 suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
                 suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
-                duration=duration_ms # Salva duração no banco
+                duration=duration_ms
             )
-            
             try:
                 with open(audio_path, 'rb') as f:
                     filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
@@ -146,10 +126,8 @@ class ChatMessageListView(generics.ListCreateAPIView):
             ai_messages.append(ai_message)
 
         else:
-            # FLUXO TEXTO: Parágrafos
             paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
             if not paragraphs: paragraphs = ["..."]
-            
             total_paragraphs = len(paragraphs)
 
             for i, paragraph_content in enumerate(paragraphs):
@@ -176,9 +154,11 @@ class ChatMessageListView(generics.ListCreateAPIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
-# ... (O restante das views permanece igual) ...
 class ChatMessageAttachmentView(generics.CreateAPIView):
-    # ... (mantenha serializer_class, permission_classes, etc) ...
+    """
+    View de upload de anexos com PROCESSAMENTO RAG SÍNCRONO.
+    O retorno HTTP só acontece após o texto ser extraído e indexado no banco vetorial.
+    """
     serializer_class = ChatMessageAttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]
@@ -195,14 +175,13 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
             return Response({"detail": "No files."}, status=400)
         
         created_msgs = []
-        tasks_to_run = [] # Lista de tarefas para rodar após o commit
 
         try:
             with transaction.atomic():
                 for f in files:
                     mime, _ = mimetypes.guess_type(f.name)
                     
-                    # Salva no banco (SQL)
+                    # 1. Salvar o arquivo no disco (Storage padrão do Django)
                     m = self.get_serializer(data={'attachment': f, 'content': ''})
                     m.is_valid(raise_exception=True)
                     obj = m.save(
@@ -213,34 +192,52 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
                     )
                     created_msgs.append(obj)
 
-                    # --- DETECÇÃO PARA RAG ---
-                    # Se for um arquivo de documento (PDF, DOCX, TXT), agendamos o processamento
-                    if obj.attachment_type == 'file' and mime in ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']:
-                        tasks_to_run.append({
-                            'file_path': obj.attachment.path, # Caminho absoluto no disco
-                            'mime_type': mime,
-                            'original_filename': obj.original_filename,
-                            'user_id': chat.user.id,
-                            'bot_id': chat.bot.id
-                        })
+                    # 2. Processamento RAG Síncrono (Bloqueante)
+                    # Verifica se é um documento processável (PDF, DOCX, TXT)
+                    if obj.attachment_type == 'file' and mime in [
+                        'application/pdf', 
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                        'text/plain'
+                    ]:
+                        try:
+                            logger.info(f"[RAG] Iniciando processamento síncrono para: {obj.original_filename}")
+                            
+                            # Passo A: Extração de Texto
+                            text = FileProcessor.extract_text(obj.attachment.path, mime)
+                            
+                            if text:
+                                # Passo B: Chunking
+                                chunks = FileProcessor.chunk_text(text)
+                                
+                                # Passo C: Indexação Vetorial
+                                if chunks:
+                                    vector_service.add_document_chunks(
+                                        user_id=chat.user.id,
+                                        bot_id=chat.bot.id,
+                                        chunks=chunks,
+                                        source_name=obj.original_filename
+                                    )
+                                else:
+                                    logger.warning(f"[RAG] Nenhum texto extraído de {obj.original_filename}")
+                            else:
+                                logger.warning(f"[RAG] Texto vazio extraído de {obj.original_filename}")
+
+                        except Exception as rag_error:
+                            # Logamos o erro mas NÃO falhamos o upload. O usuário ainda vê o arquivo.
+                            logger.error(f"[RAG ERROR] Falha ao processar {obj.original_filename}: {rag_error}")
 
                 if created_msgs:
                     chat.last_message_at = created_msgs[-1].created_at
                     chat.save()
 
-            # --- DISPARO ASSÍNCRONO (FORA DA TRANSAÇÃO) ---
-            for task in tasks_to_run:
-                thread = threading.Thread(
-                    target=process_document_background,
-                    kwargs=task
-                )
-                thread.daemon = True
-                thread.start()
-
+            # Retorna a resposta apenas DEPOIS que tudo acima terminou
             return Response(ChatMessageSerializer(created_msgs, many=True, context={'request':request}).data, status=201)
             
         except Exception as e: 
+            logger.error(f"Erro no upload: {e}")
             return Response({"detail": str(e)}, status=500)
+
+# ... (Restante das views: AudioTranscriptionView, ArchiveChatView, etc. permanecem iguais) ...
 class AudioTranscriptionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser]
@@ -323,17 +320,13 @@ class VoiceMessageView(APIView):
         
         reply_audio = str(request.data.get('reply_with_audio', 'false')).lower() == 'true'
         
-        # Captura duração enviada pelo Frontend
         try:
             user_duration = int(float(request.data.get('duration', 0)))
         except:
             user_duration = 0
             
         try:
-            # Processa áudio
             res = handle_voice_message(chat.id, f, reply_audio, request.user)
-            
-            # Atualiza duração da mensagem do usuário (já que handle_voice_message não recebe duration)
             if user_duration > 0:
                 res['user_message'].duration = user_duration
                 res['user_message'].save()

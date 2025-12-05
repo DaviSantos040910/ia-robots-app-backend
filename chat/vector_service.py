@@ -11,7 +11,6 @@ import os
 # Configuração de Logger
 logger = logging.getLogger(__name__)
 
-
 class VectorService:
 
     def __init__(self):
@@ -64,15 +63,11 @@ class VectorService:
         """
         Adiciona uma interação à memória de longo prazo.
         """
-        if not self.collection:
-            logger.warning("Tentativa de adicionar memória sem ChromaDB inicializado.")
-            return
+        if not self.collection: return
 
         try:
             embedding = self._get_embedding(text, task_type="retrieval_document")
-            if not embedding:
-                logger.warning("Embedding falhou. Memória ignorada.")
-                return
+            if not embedding: return
 
             doc_id = str(uuid.uuid4())
             timestamp = datetime.now().isoformat()
@@ -81,6 +76,7 @@ class VectorService:
                 'bot_id': str(bot_id),
                 'role': role,
                 'timestamp': timestamp,
+                'type': 'memory' # Diferencia memória de conversação de documentos
             }
 
             self.collection.add(
@@ -89,120 +85,68 @@ class VectorService:
                 metadatas=[metadatas],
                 ids=[doc_id]
             )
-            logger.debug(f"Memória adicionada: {doc_id} (User: {user_id}, Bot: {bot_id})")
+            logger.debug(f"Memória adicionada: {doc_id}")
 
         except Exception as e:
-            logger.error(f"Erro ao salvar memória no ChromaDB: {str(e)}")
+            logger.error(f"Erro ao salvar memória: {str(e)}")
 
-    def search_memory(self, user_id, bot_id, query_text, limit=5, exclude_texts=None):
+    def add_document_chunks(self, user_id, bot_id, chunks, source_name):
         """
-        Busca contextos relevantes na memória baseados na query atual.
-        Filtra textos que já estão no histórico recente para evitar repetição.
-        
-        Args:
-            user_id: ID do usuário
-            bot_id: ID do bot
-            query_text: Texto da busca
-            limit: Número máximo de resultados
-            exclude_texts: Lista de textos a excluir (histórico recente)
+        Adiciona chunks de um documento processado ao ChromaDB.
+        Método síncrono e otimizado para inserção em lote.
         """
-        if not self.collection:
-            logger.warning("Tentativa de buscar memória sem ChromaDB inicializado.")
-            return []
+        if not self.collection or not chunks:
+            logger.warning("VectorService: Coleção não iniciada ou chunks vazios.")
+            return
 
-        exclude_texts = exclude_texts or []
-        # Normaliza textos para comparação (primeiros 100 chars, lowercase)
-        exclude_set = set()
-        for text in exclude_texts:
-            if text:
-                normalized = text.lower().strip()[:100]
-                exclude_set.add(normalized)
-
-        try:
-            embedding = self._get_embedding(query_text, task_type="retrieval_query")
-            if not embedding:
-                return []
-
-            # Busca mais resultados para compensar os que serão filtrados
-            results = self.collection.query(
-                query_embeddings=[embedding],
-                n_results=limit * 3,  # Busca 3x mais para compensar filtros
-                where={
-                    "$and": [
-                        {"user_id": str(user_id)},
-                        {"bot_id": str(bot_id)}
-                    ]
-                }
-            )
-
-            if results and results.get('documents'):
-                found_docs = results['documents'][0]
-                
-                # Filtra documentos que já estão no histórico recente
-                filtered_docs = []
-                for doc in found_docs:
-                    doc_normalized = doc.lower().strip()[:100]
-                    
-                    # Verifica se o documento é similar a algum texto excluído
-                    is_duplicate = False
-                    for excluded in exclude_set:
-                        # Se houver sobreposição significativa, considera duplicata
-                        if doc_normalized in excluded or excluded in doc_normalized:
-                            is_duplicate = True
-                            break
-                    
-                    if not is_duplicate:
-                        filtered_docs.append(doc)
-                    
-                    if len(filtered_docs) >= limit:
-                        break
-                
-                logger.debug(f"Memória: {len(found_docs)} encontrados, {len(filtered_docs)} após filtro.")
-                return filtered_docs
-
-            return []
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar memória no ChromaDB: {str(e)}")
-            return []
-
-    def add_documents_batch(self, user_id, bot_id, chunks, source_file_name):
-        """Adiciona documentos em lote para performance."""
-        if not self.collection or not chunks: return
+        logger.info(f"Iniciando indexação de {len(chunks)} chunks para {source_name}...")
         
-        # Prepara dados
         docs, embeds, metas, ids = [], [], [], []
         timestamp = datetime.now().isoformat()
         
         for i, chunk in enumerate(chunks):
+            # Gera embedding para cada chunk
             embedding = self._get_embedding(chunk, task_type="retrieval_document")
+            
             if embedding:
+                doc_id = str(uuid.uuid4())
                 docs.append(chunk)
                 embeds.append(embedding)
-                ids.append(str(uuid.uuid4()))
+                ids.append(doc_id)
+                
+                # Metadados específicos para documentos RAG
                 metas.append({
                     'user_id': str(user_id),
                     'bot_id': str(bot_id),
-                    'type': 'document', # Diferenciador chave
-                    'source': source_file_name,
+                    'type': 'document',
+                    'source': source_name,
+                    'chunk_index': i,
                     'timestamp': timestamp
                 })
         
-        # Salva em lote
+        # Salva em lote no ChromaDB
         if docs:
             try:
-                self.collection.add(documents=docs, embeddings=embeds, metadatas=metas, ids=ids)
-                logger.info(f"Batch insert: {len(docs)} chunks de {source_file_name}")
+                self.collection.add(
+                    documents=docs, 
+                    embeddings=embeds, 
+                    metadatas=metas, 
+                    ids=ids
+                )
+                logger.info(f"RAG SUCESSO: {len(docs)} chunks indexados de '{source_name}'.")
             except Exception as e:
-                logger.error(f"Erro batch insert: {e}")
+                logger.error(f"RAG ERRO ao salvar no banco vetorial: {e}")
 
     def search_context(self, query_text, user_id, bot_id, limit=5):
-        """Busca híbrida: Retorna tanto memória quanto documentos formatados."""
+        """
+        Busca híbrida: Retorna tanto memória quanto trechos de documentos.
+        """
         if not self.collection: return []
         try:
             embedding = self._get_embedding(query_text, task_type="retrieval_query")
             if not embedding: return []
 
+            # Busca vetorial filtrada por usuário e bot
             results = self.collection.query(
                 query_embeddings=[embedding],
                 n_results=limit,
@@ -212,13 +156,15 @@ class VectorService:
             formatted = []
             if results and results['documents']:
                 for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-                    if meta.get('type') == 'document':
-                        formatted.append(f"[CONTEXTO DO ARQUIVO: {meta.get('source', 'Anexo')}]\n{doc}")
+                    doc_type = meta.get('type', 'memory')
+                    
+                    if doc_type == 'document':
+                        source = meta.get('source', 'Anexo desconhecido')
+                        formatted.append(f"[CONTEXTO DO ARQUIVO: {source}]\n{doc}")
                     else:
                         formatted.append(f"[MEMÓRIA DE CONVERSA]\n{doc}")
+            
             return formatted
         except Exception as e:
             logger.error(f"Erro search_context: {e}")
             return []
-
-
