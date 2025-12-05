@@ -11,7 +11,13 @@ from django.db import transaction
 from .serializers import ChatListSerializer, ChatMessageSerializer, ChatMessageAttachmentSerializer
 from bots.models import Bot
 from django.shortcuts import get_object_or_404
-from .ai_service import get_ai_response, transcribe_audio_gemini, generate_tts_audio, handle_voice_interaction, handle_voice_message
+from .services import (
+    get_ai_response, 
+    transcribe_audio_gemini, 
+    generate_tts_audio, 
+    handle_voice_interaction, 
+    handle_voice_message
+)
 from myproject.pagination import StandardMessagePagination
 import re
 import mimetypes
@@ -21,7 +27,7 @@ from pathlib import Path
 import uuid
 from django.core.files import File
 import logging  
-from .ai_service import vector_service # Instância do serviço vetorial
+from .vector_service import vector_service  # Mantém para RAG upload
 from .file_processor import FileProcessor # Novo utilitário
 
 logger = logging.getLogger(__name__)
