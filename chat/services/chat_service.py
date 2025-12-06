@@ -21,7 +21,8 @@ from google.genai import types
 
 from ..models import ChatMessage, Chat
 from ..vector_service import VectorService
-from .ai_client import get_ai_client
+from .ai_client import get_ai_client, detect_intent
+from .image_service import ImageGenerationService  # Importação do novo serviço
 from .context_builder import (
     build_conversation_history, 
     build_system_instruction,
@@ -35,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 # Instância global do serviço vetorial
 vector_service = VectorService()
+# Instância global do serviço de imagem
+image_service = ImageGenerationService()
 
 
 def _parse_ai_response(response_text: str) -> dict:
@@ -140,8 +143,55 @@ def get_ai_response(
 ) -> dict:
     """
     Obtém resposta da IA com contexto histórico, memória e RAG Multi-Documento.
+    Agora inclui detecção de intenção para geração de imagens.
     """
     try:
+        # 0. DETECÇÃO DE INTENÇÃO (NOVO)
+        # Só detecta se não tiver anexo de arquivo (se tiver anexo, assume que é para analisar o arquivo)
+        intent = 'TEXT'
+        if not (user_message_obj and user_message_obj.attachment):
+            try:
+                intent = detect_intent(user_message_text)
+                logger.info(f"[ChatService] Intenção detectada: {intent}")
+            except Exception as e:
+                logger.warning(f"[ChatService] Falha na detecção de intenção: {e}")
+                intent = 'TEXT'
+
+        # --- FLUXO DE GERAÇÃO DE IMAGEM ---
+        if intent == 'IMAGE':
+            try:
+                logger.info(f"[ChatService] Iniciando fluxo de geração de imagem para: {user_message_text[:30]}...")
+                image_rel_path = image_service.generate_and_save_image(user_message_text)
+                
+                # Retorna estrutura similar ao parse_ai_response, mas com metadados de imagem
+                # A View (ChatMessageListView) precisará ser adaptada se quiser usar 'image_path'
+                # ou podemos salvar a mensagem da IA aqui mesmo?
+                # O padrão atual do projeto é retornar dict e a View salva.
+                # Mas para imagem, precisamos passar o path do anexo.
+                
+                # Vamos retornar um dict especial que a View pode entender, ou instruir a View
+                # O método atual na View espera 'content', 'suggestions', 'audio_path'.
+                # Vamos adicionar 'generated_image_path' ao retorno.
+                
+                return {
+                    'content': f"Aqui está a imagem que criei para você com base em \"{user_message_text}\".",
+                    'suggestions': ["Gere outra variação", "Mude o estilo", "Obrigado!"],
+                    'audio_path': None,
+                    'duration_ms': 0,
+                    'generated_image_path': image_rel_path # Campo novo para a View tratar
+                }
+
+            except Exception as img_err:
+                logger.error(f"[ChatService] Erro ao gerar imagem: {img_err}")
+                # Fallback para texto se falhar a imagem
+                return {
+                    'content': f"Tentei gerar a imagem, mas encontrei um erro: {str(img_err)}. Posso tentar novamente ou ajudar com outra coisa?",
+                    'suggestions': [],
+                    'audio_path': None
+                }
+
+        # --- FLUXO DE TEXTO (EXISTENTE) ---
+        
         client = get_ai_client()
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id)
         bot = chat.bot
@@ -342,8 +392,10 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
         ai_suggestions = ai_response_data.get('suggestions', [])
         audio_path = ai_response_data.get('audio_path')
         duration_ms = ai_response_data.get('duration_ms', 0)
+        generated_image_path = ai_response_data.get('generated_image_path') # NOVO: Suporte a imagem
 
         # 4. Criar mensagem IA
+        # Se tiver imagem gerada, a mensagem deve ser configurada com ela
         ai_message = ChatMessage(
             chat=chat,
             role=ChatMessage.Role.ASSISTANT,
@@ -353,7 +405,17 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
             duration=duration_ms
         )
 
-        if audio_path and os.path.exists(audio_path):
+        if generated_image_path:
+             # Se for imagem gerada
+             # O caminho gerado é relativo (ex: chat_attachments/xyz.png)
+             # Precisamos anexar isso ao FieldFile do Django.
+             # Como o arquivo já está no disco (media/chat_attachments/...), 
+             # podemos atribuir diretamente o nome relativo ao campo FileField.
+             ai_message.attachment.name = generated_image_path
+             ai_message.attachment_type = 'image'
+             ai_message.original_filename = "generated_image.png"
+
+        elif audio_path and os.path.exists(audio_path):
             try:
                 with open(audio_path, 'rb') as f:
                     filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"

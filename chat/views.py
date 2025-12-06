@@ -106,10 +106,33 @@ class ChatMessageListView(generics.ListCreateAPIView):
         ai_suggestions = ai_response_data.get('suggestions', [])
         audio_path = ai_response_data.get('audio_path')
         duration_ms = ai_response_data.get('duration_ms', 0)
+        generated_image_path = ai_response_data.get('generated_image_path') # NOVO: Captura caminho da imagem
 
         ai_messages = []
 
-        if audio_path and os.path.exists(audio_path):
+        # --- LÓGICA DE IMAGEM GERADA (Prioridade sobre TTS) ---
+        if generated_image_path:
+            ai_message = ChatMessage(
+                chat=chat,
+                role=ChatMessage.Role.ASSISTANT,
+                content=ai_content,
+                suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
+                suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
+            )
+            # O caminho retornado já é relativo a MEDIA_ROOT, então podemos atribuir diretamente
+            # O Django FileField aceita strings que são caminhos relativos dentro do storage
+            ai_message.attachment.name = generated_image_path
+            ai_message.attachment_type = 'image'
+            ai_message.original_filename = "generated_image.png"
+            
+            ai_message.save()
+            ai_messages.append(ai_message)
+
+            chat.last_message_at = timezone.now()
+            chat.save()
+
+        # --- LÓGICA DE ÁUDIO TTS ---
+        elif audio_path and os.path.exists(audio_path):
             ai_message = ChatMessage(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
@@ -131,6 +154,7 @@ class ChatMessageListView(generics.ListCreateAPIView):
             ai_message.save()
             ai_messages.append(ai_message)
 
+        # --- LÓGICA DE TEXTO PADRÃO ---
         else:
             paragraphs = re.split(r'\n{2,}', ai_content.strip()) if ai_content else []
             if not paragraphs: paragraphs = ["..."]

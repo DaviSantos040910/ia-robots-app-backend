@@ -172,3 +172,13 @@ MEDIA_URL = '/media/'
 # --- ChromaDB Configuration (Long Term Memory) ---
 # Define onde o banco de dados vetorial será salvo localmente.
 CHROMA_DB_PATH = BASE_DIR / 'chroma_db_data'
+
+# ===== CONFIGURAÇÃO DE IA =====
+
+# False = Gemini API (gratuito com GEMINI_API_KEY)
+# True = Vertex AI (Google Cloud, requer projeto e credenciais)
+USE_VERTEX_AI = False
+
+# Configurações Vertex AI (preencha quando for migrar)
+VERTEX_PROJECT_ID = os.getenv('VERTEX_PROJECT_ID', '')
+VERTEX_LOCATION = os.getenv('VERTEX_LOCATION', 'us-central1')
