@@ -12,6 +12,8 @@ import logging
 import tempfile
 import uuid
 
+import time
+
 from datetime import datetime
 from django.utils import timezone
 from django.db import transaction
@@ -21,7 +23,7 @@ from google.genai import types
 
 from ..models import ChatMessage, Chat
 from ..vector_service import VectorService
-from .ai_client import get_ai_client, detect_intent
+from .ai_client import get_ai_client, detect_intent, generate_content_stream 
 from .image_service import ImageGenerationService  # Importação do novo serviço
 from .context_builder import (
     build_conversation_history, 
@@ -41,55 +43,36 @@ image_service = ImageGenerationService()
 
 
 def _parse_ai_response(response_text: str) -> dict:
-    """
-    Faz parse da resposta da IA, extraindo conteúdo e sugestões.
-    """
-    result = {
-        'content': "",
-        'suggestions': [],
-        'audio_path': None,
-        'duration_ms': 0
-    }
-
+    """Faz parse da resposta da IA, extraindo conteúdo e sugestões."""
+    result = {'content': "", 'suggestions': [], 'audio_path': None, 'duration_ms': 0}
     if not response_text:
         result['content'] = "Desculpe, não consegui gerar uma resposta."
         return result
-
+    
     text = response_text.strip()
-
-    # Tenta primeiro como JSON
+    # Tenta JSON
     try:
-        # CORREÇÃO: A regex estava cortada aqui.
-        # Remove ```json ou ``` no início
         cleaned = re.sub(r'^```\w*', '', text, flags=re.MULTILINE)
-        # Remove ``` no final
         cleaned = re.sub(r'\s*```$', '', cleaned, flags=re.MULTILINE).strip()
-        
         data = json.loads(cleaned)
-
         if isinstance(data, dict):
             result['content'] = data.get('response', data.get('content', ''))
             result['suggestions'] = data.get('suggestions', [])[:2]
-            if result['content']:
-                return result
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-    # Formato natural com marcador ---SUGESTÕES---
+            if result['content']: return result
+    except: pass
+    
+    # Formato natural
     if "---SUGESTÕES---" in text or "---SUGGESTIONS---" in text:
-        separator = "---SUGESTÕES---" if "---SUGESTÕES---" in text else "---SUGGESTIONS---"
-        parts = text.split(separator)
+        sep = "---SUGESTÕES---" if "---SUGESTÕES---" in text else "---SUGGESTIONS---"
+        parts = text.split(sep)
         result['content'] = parts[0].strip()
-
         if len(parts) > 1:
-            suggestions_text = parts[1]
-            suggestions = re.findall(r'(?:^|\n)\s*(?:\d+\.|-)\s*(.+)', suggestions_text)
-            result['suggestions'] = [s.strip() for s in suggestions[:2] if s.strip()]
+            sugs = re.findall(r'(?:^|\n)\s*(?:\d+\.|-)\s*(.+)', parts[1])
+            result['suggestions'] = [s.strip() for s in sugs[:2] if s.strip()]
     else:
         result['content'] = text
-
-    result['content'] = result['content'].strip()
     return result
+
 
 
 def generate_suggestions_for_bot(prompt: str):
@@ -302,6 +285,114 @@ Após responder, forneça 2 sugestões curtas de continuação no formato:
     except Exception as e:
         logger.error(f"Erro AI Service: {e}")
         return {'content': "Erro ao processar resposta.", 'suggestions': [], 'audio_path': None}
+
+
+def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
+    """
+    Generator que processa a mensagem e envia chunks via Server-Sent Events (SSE).
+    Garante que sugestões e formatação sejam preservadas.
+    Inclui delay para simular digitação natural.
+    """
+    
+    # Configuração de delay (em segundos)
+    # Ajuste este valor para controlar a velocidade
+    CHUNK_DELAY = 0.05  # 50ms = velocidade natural de digitação
+    
+    try:
+        chat = Chat.objects.select_related('bot', 'user').get(id=chat_id, user_id=user_id)
+        bot = chat.bot
+
+        yield f"data: {json.dumps({'type': 'start', 'status': 'processing'})}\n\n"
+
+        # Contexto
+        user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente útil."
+        user_name = chat.user.first_name if chat.user.first_name else "Usuário"
+        current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+        gemini_history, _ = build_conversation_history(chat_id, limit=10)
+        doc_contexts, memory_contexts, available_docs = _get_smart_context(
+            query=user_message_text, user_id=chat.user_id, bot_id=bot.id, chat_id=chat_id
+        )
+
+        system_instruction = build_system_instruction(
+            bot_prompt=user_defined_prompt,
+            user_name=user_name,
+            doc_contexts=doc_contexts,
+            memory_contexts=memory_contexts,
+            current_time=current_time_str,
+            available_docs=available_docs
+        )
+
+        config = types.GenerateContentConfig(
+            temperature=0.7,
+            max_output_tokens=3000,
+            system_instruction=system_instruction
+        )
+
+        # Prompt forçando sugestões no final
+        prompt_text = f"""{user_message_text}
+---
+Após responder, forneça 2 ou 3 sugestões curtas de continuação no formato:
+[Resposta]
+---SUGESTÕES---
+1. [Sugestão 1]
+2. [Sugestão 2]"""
+
+        contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
+
+        logger.info(f"[Stream] Iniciando geração para chat {chat_id}")
+
+        stream = generate_content_stream(contents, config)
+        full_raw_response = ""
+
+        # Iterar com delay para simular digitação natural
+        for text_chunk in stream:
+            if isinstance(text_chunk, str) and text_chunk:
+                full_raw_response += text_chunk
+                yield f"data: {json.dumps({'type': 'chunk', 'text': text_chunk})}\n\n"
+                
+                # Delay ajustável para controlar velocidade de digitação
+                time.sleep(CHUNK_DELAY)
+            else:
+                logger.warning(f"[Stream] Chunk inesperado: {type(text_chunk)}")
+
+        # PÓS-PROCESSAMENTO
+        if full_raw_response:
+            parsed_data = _parse_ai_response(full_raw_response)
+            final_content = parsed_data['content']
+            final_suggestions = parsed_data['suggestions']
+
+            ai_message = ChatMessage.objects.create(
+                chat=chat,
+                role=ChatMessage.Role.ASSISTANT,
+                content=final_content,
+                suggestion1=final_suggestions[0] if len(final_suggestions) > 0 else None,
+                suggestion2=final_suggestions[1] if len(final_suggestions) > 1 else None,
+            )
+
+            chat.last_message_at = timezone.now()
+            chat.save()
+
+            end_payload = {
+                'type': 'end',
+                'message_id': ai_message.id,
+                'clean_content': final_content,
+                'suggestions': final_suggestions
+            }
+            yield f"data: {json.dumps(end_payload)}\n\n"
+
+            # Memória em background
+            if len(user_message_text) > 10:
+                threading.Thread(
+                    target=process_memory_background,
+                    args=(chat.user_id, bot.id, user_message_text, final_content)
+                ).start()
+        else:
+            yield f"data: {json.dumps({'type': 'error', 'detail': 'No content'})}\n\n"
+
+    except Exception as e:
+        logger.error(f"[Stream Error] {e}", exc_info=True)
+        yield f"data: {json.dumps({'type': 'error', 'detail': str(e)})}\n\n"
 
 
 def _get_smart_context(

@@ -12,7 +12,8 @@ from .views import (
     MessageTTSView,
     MessageLikeToggleView,
     VoiceInteractionView,
-    VoiceMessageView 
+    VoiceMessageView,
+    StreamChatMessageView
 
 )
 
@@ -36,5 +37,7 @@ urlpatterns = [
     path('<int:chat_pk>/transcribe/', AudioTranscriptionView.as_view(), name='audio-transcription'),
     path('<int:chat_pk>/voice/', VoiceInteractionView.as_view(), name='chat-voice'),
     path('<int:chat_pk>/voice-message/', VoiceMessageView.as_view(), name='chat-voice-message'),
+    path('<int:pk>/stream/', StreamChatMessageView.as_view(), name='chat-message-stream'),
+
 
 ]

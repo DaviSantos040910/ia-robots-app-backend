@@ -10,7 +10,14 @@ Serviços de apoio para o módulo de chat:
 """
 
 from .ai_client import get_ai_client
-from .chat_service import get_ai_response, handle_voice_interaction, handle_voice_message, generate_suggestions_for_bot
+# Adicione 'process_message_stream' à lista de importações abaixo
+from .chat_service import (
+    get_ai_response, 
+    handle_voice_interaction, 
+    handle_voice_message, 
+    generate_suggestions_for_bot,
+    process_message_stream
+)
 from .memory_service import process_memory_background
 from .tts_service import generate_tts_audio
 from .transcription_service import transcribe_audio_gemini
