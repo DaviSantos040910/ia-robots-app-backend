@@ -1,7 +1,7 @@
 # chat/services/context_builder.py
 """
 Construtor de contexto e system instructions para a IA.
-Suporta múltiplos documentos com citação de fonte.
+Suporta múltiplos documentos com citação de fonte e formatação estrita de sugestões.
 """
 
 from typing import List, Tuple, Optional
@@ -76,7 +76,7 @@ def build_system_instruction(
     available_docs: Optional[List[str]] = None
 ) -> str:
     """
-    Constrói system instruction otimizado para RAG multi-documento.
+    Constrói system instruction otimizado para RAG multi-documento e Output Format controlado.
     
     Args:
         bot_prompt: Prompt do personagem/bot
@@ -135,4 +135,7 @@ Contexto sobre {user_name} e conversas anteriores:
 1. **MANTENHA O PERSONAGEM** - Você É o personagem definido acima.
 2. **SEJA CONCISO** - Responda de forma natural e direta.
 3. **NÃO REPITA** - Evite repetir informações já ditas.
-4. **FORMATAÇÃO** - Use Markdown apenas quando ajudar na clareza."""
+4. **FORMATAÇÃO** - Use Markdown apenas quando ajudar na clareza.
+5. **SUGESTÕES DE RESPOSTA** - Ao final da resposta, se houver sugestões de resposta para o usuário, você DEVE iniciar com o separador exato |||SUGGESTIONS||| e depois fornecer uma lista JSON estrita. NUNCA coloque o JSON no meio do texto.
+   Exemplo de Saída Esperada: 
+   ...espero ter ajudado com isso. |||SUGGESTIONS||| ["Obrigado", "Conte mais", "Encerrar"]"""
