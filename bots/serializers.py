@@ -37,6 +37,7 @@ class BotSerializer(serializers.ModelSerializer):
         model = Bot
         fields = (
             'id', 'name', 'description','prompt', 'avatar_url', 'voice',
+            'allow_web_search', # Added allow_web_search here
             'publicity', 'is_official', 'owner', 'owner_username',
             'categories', 'category_ids'
         )
@@ -58,21 +59,19 @@ class BotDetailSerializer(serializers.ModelSerializer):
     settings = serializers.SerializerMethodField()
     handle = serializers.ReadOnlyField(source='owner.username')
     
-    # --- CORREÇÃO: Renomeia 'avatar_url' para 'avatarUrl' na saída da API ---
     avatarUrl = serializers.URLField(source='avatar_url', read_only=True)
 
     class Meta:
         model = Bot
         fields = (
             'id', 'name', 'handle', 
-            'avatarUrl', # Usa o novo campo
+            'avatarUrl',
             'stats', 'tags', 'createdByMe', 'settings'
         )
 
 
     def get_stats(self, obj):
         """
-        --- LÓGICA DE CÁLCULO REAL ---
         Calculates and formats the follower and monthly user counts.
         """
         # 1. Calcular o número de seguidores (followers)
@@ -87,7 +86,6 @@ class BotDetailSerializer(serializers.ModelSerializer):
             chats__messages__created_at__gte=thirty_days_ago
         ).distinct().count()
         
-        # Retorna os valores formatados, como o frontend espera
         return {
             "monthlyUsers": format_number(monthly_users_count),
             "followers": format_number(follower_count)
@@ -110,5 +108,6 @@ class BotDetailSerializer(serializers.ModelSerializer):
     def get_settings(self, obj):
         return {
             "voice": obj.voice,
-            "publicity": obj.publicity
+            "publicity": obj.publicity,
+            "allow_web_search": obj.allow_web_search # Added allow_web_search to settings output
         }

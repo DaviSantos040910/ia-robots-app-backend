@@ -73,7 +73,8 @@ def build_system_instruction(
     doc_contexts: List[str],
     memory_contexts: List[str],
     current_time: str,
-    available_docs: Optional[List[str]] = None
+    available_docs: Optional[List[str]] = None,
+    allow_web_search: bool = False
 ) -> str:
     """
     Constrói system instruction otimizado para RAG multi-documento e Output Format controlado.
@@ -85,6 +86,7 @@ def build_system_instruction(
         memory_contexts: Lista de memórias formatadas
         current_time: Data/hora atual
         available_docs: Lista de nomes de documentos disponíveis (ordenados por recência)
+        allow_web_search: Se True, injeta instruções específicas para uso da Google Search
     """
     
     # Lista de documentos disponíveis
@@ -114,6 +116,17 @@ Contexto sobre {user_name} e conversas anteriores:
 {chr(10).join(memory_contexts)}
 """
 
+    # Lógica do Prompt para Web Search
+    web_search_instruction = ""
+    if allow_web_search:
+        web_search_instruction = """
+### FERRAMENTA DE PESQUISA WEB HABILITADA ###
+Você tem acesso a informações em tempo real via Google Search.
+- QUANDO USAR: Sempre que o usuário perguntar sobre fatos recentes, notícias, cotações, clima ou dados que não estão no seu conhecimento base.
+- COMO AGIR: Não diga "Eu não tenho acesso à internet". Use a ferramenta de busca para encontrar a resposta.
+- REFINE A BUSCA: Se a pergunta for vaga, faça uma busca inteligente para trazer o melhor resultado.
+"""
+
     return f"""# PERSONAGEM
 {bot_prompt}
 
@@ -123,6 +136,7 @@ Contexto sobre {user_name} e conversas anteriores:
 {docs_list_section}
 {knowledge_section}
 {memory_section}
+{web_search_instruction}
 ## DIRETRIZES PARA DOCUMENTOS
 1. **SEMPRE CITE A FONTE** - Ao usar informação de um documento, diga: "De acordo com [nome_do_arquivo]..." ou "No documento [nome]..."
 2. **REFERÊNCIAS PRONOMINAIS** - Se o usuário perguntar "o que é isso?", "resuma isso", etc. sem especificar, refira-se ao documento MAIS RECENTE da lista (item 1).

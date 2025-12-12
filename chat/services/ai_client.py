@@ -88,7 +88,7 @@ Responda APENAS: TEXT ou IMAGE"""
         return "TEXT"
 
 
-def generate_content_stream(contents, config, model_name=None):
+def generate_content_stream(contents, config, model_name=None, use_google_search: bool = False):
     """
     Gera conteúdo em modo streaming usando generate_content_stream().
     
@@ -99,6 +99,7 @@ def generate_content_stream(contents, config, model_name=None):
         contents: Conteúdo/histórico da conversa
         config: Configuração de geração (GenerateContentConfig)
         model_name: Nome do modelo (opcional)
+        use_google_search: Se True, habilita o Google Search Grounding
         
     Yields:
         Texto de cada chunk conforme gerado pela IA
@@ -107,8 +108,18 @@ def generate_content_stream(contents, config, model_name=None):
         client = get_ai_client()
         model = model_name or get_model('chat')
         
-        logger.info(f"[StreamClient] Usando generate_content_stream com modelo {model}")
+        logger.info(f"[StreamClient] Usando generate_content_stream com modelo {model} | Web Search: {use_google_search}")
         
+        # Configuração dinâmica de ferramentas
+        tools = []
+        if use_google_search:
+            # Habilita a busca integrada (Grounding)
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+            
+        # Atribui a lista de ferramentas (vazia ou com busca) à configuração
+        # Isso garante que a busca seja desativada se use_google_search for False
+        config.tools = tools
+
         # Usar o método específico de streaming
         stream = client.models.generate_content_stream(
             model=model,
@@ -133,7 +144,8 @@ def generate_content_stream(contents, config, model_name=None):
                             if text:
                                 yield text
                 except (IndexError, AttributeError) as e:
-                    logger.warning(f"[StreamClient] Chunk {chunk_count} sem texto acessível: {e}")
+                    # Logs de debug apenas se necessário, chunks de grounding metadata podem vir vazios de texto
+                    pass
         
         logger.info(f"[StreamClient] Streaming concluído: {chunk_count} chunks processados")
         

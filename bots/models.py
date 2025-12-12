@@ -30,11 +30,14 @@ class Bot(models.Model):
     prompt = models.TextField()
     avatar_url = models.ImageField(upload_to='bot_avatars/', null=True, blank=True)
     voice = models.CharField(max_length=50, default='EnergeticYouth')
+    
+    # --- NEW: Flag to enable web search capability ---
+    allow_web_search = models.BooleanField(default=False)
+
     publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PUBLIC)
     is_official = models.BooleanField(default=False)
     categories = models.ManyToManyField(Category, related_name='bots', blank=True)
     
-    # --- NEW: ManyToManyField to track user collections ---
     # This field will store which users have added this bot to their personal list.
     subscribers = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='subscribed_bots', blank=True)
     

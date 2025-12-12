@@ -2,7 +2,7 @@
 """
 Serviço principal de chat com IA.
 Orquestra busca de contexto multi-doc, geração de resposta e salvamento de memória.
-Atualizado para interceptar sugestões no stream.
+Atualizado para conectar a flag allow_web_search do Bot ao fluxo de Prompt e Tools.
 """
 
 import os
@@ -160,6 +160,9 @@ def get_ai_response(
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id)
         bot = chat.bot
 
+        # --- Recupera flag de Web Search ---
+        allow_web_search = getattr(bot, 'allow_web_search', False)
+
         user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente útil."
         user_name = chat.user.first_name if chat.user.first_name else "Usuário"
         current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -177,7 +180,8 @@ def get_ai_response(
             doc_contexts=doc_contexts,
             memory_contexts=memory_contexts,
             current_time=current_time_str,
-            available_docs=available_doc_names
+            available_docs=available_doc_names,
+            allow_web_search=allow_web_search # Passa a flag para o construtor de prompt
         )
 
         generation_config = types.GenerateContentConfig(
@@ -185,6 +189,14 @@ def get_ai_response(
             max_output_tokens=2500,
             system_instruction=system_instruction
         )
+
+        # Adiciona ferramenta Google Search na configuração síncrona
+        if allow_web_search:
+            # Se config.tools já existe, adiciona. Se não, cria.
+            if hasattr(generation_config, 'tools') and generation_config.tools:
+                generation_config.tools.append(types.Tool(google_search=types.GoogleSearch()))
+            else:
+                generation_config.tools = [types.Tool(google_search=types.GoogleSearch())]
 
         input_parts = []
         if user_message_obj and user_message_obj.attachment:
@@ -254,6 +266,9 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id, user_id=user_id)
         bot = chat.bot
 
+        # --- Recupera flag de Web Search ---
+        allow_web_search = getattr(bot, 'allow_web_search', False)
+
         yield f"data: {json.dumps({'type': 'start', 'status': 'processing'})}\n\n"
 
         # --- Preparação do Contexto (Igual ao síncrono) ---
@@ -272,7 +287,8 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             doc_contexts=doc_contexts,
             memory_contexts=memory_contexts,
             current_time=current_time_str,
-            available_docs=available_docs
+            available_docs=available_docs,
+            allow_web_search=allow_web_search # --- Passa flag para o system prompt ---
         )
 
         config = types.GenerateContentConfig(
@@ -284,8 +300,14 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
         contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
-        logger.info(f"[Stream] Iniciando geração para chat {chat_id}")
-        stream = generate_content_stream(contents, config)
+        logger.info(f"[Stream] Iniciando geração para chat {chat_id} | Web Search: {allow_web_search}")
+        
+        # --- Passa flag para o client de IA (habilita tool) ---
+        stream = generate_content_stream(
+            contents, 
+            config, 
+            use_google_search=allow_web_search 
+        )
 
         # --- Loop do Stream com Interceptação ---
         for text_chunk in stream:
