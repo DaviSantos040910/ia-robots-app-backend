@@ -12,3 +12,4 @@ pillow==11.1.0
 chromadb
 pypdf
 python-docx
+youtube-transcript-api

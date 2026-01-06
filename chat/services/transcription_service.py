@@ -12,13 +12,25 @@ logger = logging.getLogger(__name__)
 def transcribe_audio_gemini(audio_file) -> dict:
     """
     Transcreve áudio usando Gemini.
-    Lógica idêntica à transcribe_audio_gemini em ai_service.py.
     """
     try:
         client = get_ai_client()
 
-        audio_bytes = audio_file.read()
-        mime_type, _ = mimetypes.guess_type(audio_file.name)
+        # Se audio_file for UploadedFile, use .read(). Se for path, open.
+        if hasattr(audio_file, 'read'):
+            audio_bytes = audio_file.read()
+            # Reset pointer se necessário, mas .read() consome.
+            # Se for usado novamente, precisaria de seek(0).
+            if hasattr(audio_file, 'seek'):
+                audio_file.seek(0)
+
+            filename = getattr(audio_file, 'name', 'audio.m4a')
+        else:
+            with open(audio_file, 'rb') as f:
+                audio_bytes = f.read()
+            filename = str(audio_file)
+
+        mime_type, _ = mimetypes.guess_type(filename)
         if not mime_type:
             mime_type = 'audio/m4a'
 
