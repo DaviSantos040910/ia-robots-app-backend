@@ -14,3 +14,6 @@ pypdf
 python-docx
 beautifulsoup4
 youtube-transcript-api
+weasyprint
+python-pptx
+openpyxl
