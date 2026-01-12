@@ -20,6 +20,9 @@ urlpatterns = [
     
     # Include all URLs from the 'explore' app under '/api/v1/explore/'
     path('api/v1/explore/', include('explore.urls')),
+
+    # Include all URLs from the 'studio' app under '/api/v1/studio/'
+    path('api/v1/studio/', include('studio.urls')),
 ]
 # --- Add this line at the end ---
 # This tells Django to serve files from MEDIA_ROOT when in DEBUG mode.
