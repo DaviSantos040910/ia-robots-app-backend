@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "bots",  # Custom app
     "chat",  # Custom app
     "explore", # Add this line
+    "studio", # Add this line
 ]
 
 MIDDLEWARE = [
