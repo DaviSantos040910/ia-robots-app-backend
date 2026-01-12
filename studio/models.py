@@ -9,6 +9,7 @@ class KnowledgeArtifact(models.Model):
         SPREADSHEET = 'SPREADSHEET', 'Spreadsheet'
         WORKBOOK = 'WORKBOOK', 'Workbook'
         PODCAST = 'PODCAST', 'Podcast'
+        SUMMARY = 'SUMMARY', 'Summary'
 
     class Status(models.TextChoices):
         PROCESSING = 'processing', 'Processing'
