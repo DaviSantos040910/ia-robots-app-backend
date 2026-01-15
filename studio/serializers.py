@@ -9,6 +9,13 @@ class KnowledgeArtifactSerializer(serializers.ModelSerializer):
             'content', 'media_url', 'duration', 'score', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+        extra_kwargs = {
+            'content': {'required': False, 'allow_null': True},
+            'media_url': {'required': False, 'allow_null': True},
+            'duration': {'required': False, 'allow_null': True},
+            'score': {'required': False, 'allow_null': True},
+            'status': {'read_only': True}
+        }
 
     def validate(self, data):
         """
@@ -17,16 +24,22 @@ class KnowledgeArtifactSerializer(serializers.ModelSerializer):
         artifact_type = data.get('type')
         content = data.get('content')
 
-        # If we are just updating status or other fields and content is not present, skip validation
+        # SKIP validation if content is missing or null
         if not content:
             return data
 
-        if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
-            self._validate_quiz(content)
-        elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
-            self._validate_slide(content)
-        elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
-            self._validate_flashcard(content)
+        try:
+            if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
+                self._validate_quiz(content)
+            elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
+                self._validate_slide(content)
+            elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
+                self._validate_flashcard(content)
+        except Exception as e:
+            # Catch unexpected validation logic errors and re-raise as ValidationError
+            if isinstance(e, serializers.ValidationError):
+                raise e
+            raise serializers.ValidationError({"content": f"Invalid format: {str(e)}"})
 
         return data
 
