@@ -251,16 +251,20 @@ class VectorService:
         user_id: int, 
         bot_id: int, 
         limit: int = 6,
-        recent_doc_source: Optional[str] = None
+        recent_doc_source: Optional[str] = None,
+        allowed_sources: Optional[List[str]] = None
     ) -> Tuple[List[str], List[str]]:
         """
-        Busca inteligente com suporte a múltiplos documentos.
+        Busca inteligente com suporte a múltiplos documentos e filtro opcional.
         
         Estratégias por tipo de query:
         - REFERENCE: Prioriza documento mais recente
         - SPECIFIC: Busca apenas no documento mencionado
         - COMPARATIVE: Busca em todos os documentos, agrupa por fonte
         - GENERAL: Busca híbrida em todos, rankeado por relevância
+        
+        Args:
+            allowed_sources: Lista de nomes de arquivos para restringir a busca.
         
         Returns:
             Tuple: (doc_contexts, memory_contexts)
@@ -273,7 +277,15 @@ class VectorService:
             available_docs = self.get_available_documents(user_id, bot_id)
             available_sources = [d['source'] for d in available_docs]
             
-            logger.info(f"[RAG] Documentos disponíveis: {available_sources}")
+            # Aplica filtro de allowed_sources se fornecido
+            if allowed_sources is not None:
+                # Filtra sources disponíveis para apenas os permitidos
+                available_sources = [s for s in available_sources if s in allowed_sources]
+                # Se não sobrou nenhum source permitido, retorna vazio
+                if not available_sources:
+                     return [], []
+            
+            logger.info(f"[RAG] Documentos considerados: {available_sources}")
             
             # 2. Classifica a query
             query_type, specific_doc = self.classify_query(query_text, available_sources)
@@ -281,12 +293,19 @@ class VectorService:
             
             # 3. Executa estratégia de busca apropriada
             if query_type == QueryType.SPECIFIC and specific_doc:
+                # Se especificou um doc, ignora allowed_sources se ele estiver na lista (já filtrado em available_sources)
                 doc_contexts = self._search_specific_document(
                     query_text, user_id, bot_id, specific_doc, limit
                 )
             elif query_type == QueryType.REFERENCE:
-                # Usa documento mais recente (do contexto ou da lista)
-                target_source = recent_doc_source or (available_docs[0]['source'] if available_docs else None)
+                # Usa documento mais recente (do contexto ou da lista filtrada)
+                target_source = recent_doc_source 
+                if target_source and target_source not in available_sources:
+                    target_source = None # O recente não está na lista permitida
+                
+                if not target_source and available_sources:
+                    target_source = available_sources[0]
+
                 doc_contexts = self._search_specific_document(
                     query_text, user_id, bot_id, target_source, limit
                 ) if target_source else []
@@ -296,7 +315,7 @@ class VectorService:
                 )
             else:  # GENERAL
                 doc_contexts = self._search_general(
-                    query_text, user_id, bot_id, limit
+                    query_text, user_id, bot_id, limit, allowed_sources
                 )
             
             # 4. Busca memórias (sempre complementar)
@@ -363,23 +382,32 @@ class VectorService:
         return all_results[:limit]
 
     def _search_general(
-        self, query: str, user_id: int, bot_id: int, limit: int
+        self, query: str, user_id: int, bot_id: int, limit: int, allowed_sources: Optional[List[str]] = None
     ) -> List[str]:
-        """Busca geral em todos os documentos, rankeado por relevância."""
+        """Busca geral em todos os documentos, rankeado por relevância, com filtro opcional."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
             return []
         
+        where_clause = {
+            "$and": [
+                {"user_id": str(user_id)},
+                {"bot_id": str(bot_id)},
+                {"type": "document"}
+            ]
+        }
+
+        # Aplica filtro de allowed_sources no ChromaDB se houver
+        if allowed_sources is not None and len(allowed_sources) > 0:
+            where_clause["$and"].append({"source": {"$in": allowed_sources}})
+        elif allowed_sources is not None and len(allowed_sources) == 0:
+             # Lista vazia mas não None -> não deve retornar nada
+             return []
+
         results = self.collection.query(
             query_embeddings=[embedding],
             n_results=limit,
-            where={
-                "$and": [
-                    {"user_id": str(user_id)},
-                    {"bot_id": str(bot_id)},
-                    {"type": "document"}
-                ]
-            }
+            where=where_clause
         )
         
         return self._format_doc_results(results)

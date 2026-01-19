@@ -12,6 +12,7 @@ from .models import KnowledgeArtifact
 from .serializers import KnowledgeArtifactSerializer
 from chat.services.ai_client import get_ai_client
 from chat.services.context_builder import build_conversation_history
+from chat.vector_service import vector_service
 
 logger = logging.getLogger(__name__)
 
@@ -45,34 +46,62 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         # Save initially (status is PROCESSING by default in model)
         instance = serializer.save()
 
+        # Extract config fields from serializer context/data
+        # Note: serializer.validated_data contains write_only fields
+        options = {
+            'quantity': serializer.validated_data.get('quantity'),
+            'difficulty': serializer.validated_data.get('difficulty'),
+            'source_ids': serializer.validated_data.get('source_ids'),
+            'custom_instructions': serializer.validated_data.get('custom_instructions'),
+            'include_chat_history': serializer.validated_data.get('include_chat_history', False),
+            'target_duration': serializer.validated_data.get('duration') # Mapped from 'duration' field
+        }
+
         try:
             # Generate Real Content via AI
-            self._generate_content_with_ai(instance)
+            self._generate_content_with_ai(instance, options)
         except Exception as e:
             logger.error(f"Error generating artifact content: {e}", exc_info=True)
             instance.status = KnowledgeArtifact.Status.ERROR
             instance.save()
 
-    def _generate_content_with_ai(self, artifact):
+    def _generate_content_with_ai(self, artifact, options):
         """
         Generates content using the configured AI service (Gemini/Vertex).
         """
         client = get_ai_client()
         
         # 1. Retrieve Context
-        history, _ = build_conversation_history(artifact.chat_id, limit=20)
+        # Chat History (Conditional)
+        history_text = ""
+        if options.get('include_chat_history'):
+            history, _ = build_conversation_history(artifact.chat_id, limit=20)
+            for entry in history:
+                role = entry.get('role', 'user')
+                text = entry.get('parts', [{}])[0].get('text', '')
+                history_text += f"{role.upper()}: {text}\n"
+
+        # RAG Context (Sources)
+        rag_context = ""
+        allowed_sources = options.get('source_ids')
         
-        # Convert history to simple text for the prompt if using a generic generate_content
-        # or use it as standard chat history if the model supports it.
-        # For artifact generation, a single shot prompt with context is often safer for strict JSON.
-        conversation_text = ""
-        for entry in history:
-            role = entry.get('role', 'user')
-            text = entry.get('parts', [{}])[0].get('text', '')
-            conversation_text += f"{role.upper()}: {text}\n"
+        # Determine query for RAG based on title + instructions
+        # Use instructions if available, otherwise title
+        query_text = options.get('custom_instructions') or f"Generar {artifact.title}"
+        
+        doc_contexts, _ = vector_service.search_context(
+            query_text, 
+            artifact.chat.user.id, 
+            artifact.chat.bot.id, 
+            limit=6, 
+            allowed_sources=allowed_sources
+        )
+        
+        if doc_contexts:
+            rag_context = "SOURCE DOCUMENTS:\n" + "\n".join(doc_contexts) + "\n\n"
 
         # 2. Build Prompt based on Type
-        prompt = self._build_prompt(artifact.type, artifact.title, conversation_text)
+        prompt = self._build_prompt(artifact.type, artifact.title, history_text, rag_context, options)
         
         # 3. Call AI
         # Using a model that supports JSON output would be ideal.
@@ -113,17 +142,37 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             artifact.status = KnowledgeArtifact.Status.ERROR
             artifact.save()
 
-    def _build_prompt(self, artifact_type, title, history):
+    def _build_prompt(self, artifact_type, title, history, rag_context, options):
+        difficulty = options.get('difficulty', 'Medium')
+        quantity = options.get('quantity', 10)
+        instructions = options.get('custom_instructions', '')
+        target_duration = options.get('target_duration', 'Medium')
+
         base_instruction = (
             f"You are an expert educational content generator. "
-            f"Based on the following conversation history, create a {artifact_type} titled '{title}'.\n"
-            f"Output MUST be a valid, strict JSON object. Do not include any preamble or markdown.\n\n"
-            f"CONVERSATION HISTORY:\n{history}\n\n"
+            f"Create a {artifact_type} titled '{title}'.\n"
+            f"Output MUST be a valid, strict JSON object. Do not include any preamble or markdown.\n"
+            f"Language: Detect the language from the context (default to Portuguese if unclear).\n"
         )
+        
+        # Only add difficulty context if not Podcast (or logic as requested)
+        # But user requested mapping Duration to word count for podcast.
+        if artifact_type != KnowledgeArtifact.ArtifactType.PODCAST:
+             base_instruction += f"Target Audience Difficulty: {difficulty}.\n\n"
+
+        if instructions:
+            base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n\n"
+
+        if rag_context:
+            base_instruction += f"REFERENCE MATERIALS (Use these as the primary source of truth):\n{rag_context}\n"
+        
+        if history:
+            base_instruction += f"CONVERSATION HISTORY (Context):\n{history}\n"
+
+        base_instruction += "\nJSON STRUCTURE REQUIRED:\n"
 
         if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
             return base_instruction + (
-                "JSON Schema expected:\n"
                 "[\n"
                 "  {\n"
                 "    \"question\": \"Question text\",\n"
@@ -131,36 +180,33 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 "    \"correctAnswerIndex\": 0\n"
                 "  }\n"
                 "]\n"
-                "Generate 5 questions."
+                f"Generate exactly {quantity} questions."
             )
         
         elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
             return base_instruction + (
-                "JSON Schema expected:\n"
                 "[\n"
                 "  {\n"
                 "    \"title\": \"Slide Title\",\n"
                 "    \"bullets\": [\"Bullet 1\", \"Bullet 2\"]\n"
                 "  }\n"
                 "]\n"
-                "Generate 4-6 slides."
+                f"Generate exactly {quantity} slides."
             )
 
         elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
             return base_instruction + (
-                "JSON Schema expected:\n"
                 "[\n"
                 "  {\n"
                 "    \"front\": \"Concept/Term\",\n"
                 "    \"back\": \"Definition/Explanation\"\n"
                 "  }\n"
                 "]\n"
-                "Generate 8-10 cards."
+                f"Generate exactly {quantity} cards."
             )
 
         elif artifact_type == KnowledgeArtifact.ArtifactType.SPREADSHEET:
             return base_instruction + (
-                 "JSON Schema expected:\n"
                  "[\n"
                  "  [\"Header 1\", \"Header 2\"],\n"
                  "  [\"Row 1 Col 1\", \"Row 1 Col 2\"]\n"
@@ -168,6 +214,24 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                  "Generate a dataset relevant to the topic."
             )
         
+        elif artifact_type == KnowledgeArtifact.ArtifactType.PODCAST:
+            # Duration Mapping
+            if target_duration == 'Short':
+                duration_prompt = "Create a concise 5-minute summary script (approx 800 words). Focus only on key takeaways."
+            elif target_duration == 'Long':
+                duration_prompt = "Create an extensive 30-minute comprehensive guide (approx 3500 words). Cover all nuances and sources in depth."
+            else: # Medium
+                duration_prompt = "Create a detailed 15-minute deep-dive script (approx 2000 words). Include examples and elaboration."
+
+            return base_instruction + (
+                 "{\n"
+                 "  \"title\": \"Episode Title\",\n"
+                 "  \"script\": \"Full text of the podcast script...\",\n"
+                 "  \"hosts\": [\"Host 1\", \"Host 2\"]\n"
+                 "}\n"
+                 f"DURATION CONSTRAINT: {duration_prompt}"
+            )
+
         elif artifact_type == KnowledgeArtifact.ArtifactType.SUMMARY:
              return base_instruction + (
                  "Output should be a JSON string, e.g. \"Summary text...\" "

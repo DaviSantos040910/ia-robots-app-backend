@@ -601,3 +601,33 @@ class MessageTTSView(APIView):
                 cleanup_path=str(p)
             )
         return Response({"detail": "Error"}, status=500)
+
+# =============================================================================
+# VIEWS DE CONTEXTO E FONTES (NOVO)
+# =============================================================================
+
+class ContextSourcesView(APIView):
+    """
+    Retorna a lista de fontes disponíveis para um chat (documentos indexados).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, chat_id):
+        chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+        
+        # Busca documentos disponíveis via VectorService (que já filtra por user/bot)
+        docs = vector_service.get_available_documents(request.user.id, chat.bot.id)
+        
+        # Mapeia para o formato esperado pelo frontend
+        # Assumindo que 'source' é o nome do arquivo, usamos ele como ID e Name
+        sources = [
+            {
+                'id': doc['source'],
+                'name': doc['source'],
+                'type': 'kb' if doc.get('type') == 'knowledge_base' else 'file', # Exemplo, vector_service retorna 'document'
+                'selected': False
+            } 
+            for doc in docs
+        ]
+        
+        return Response(sources, status=200)

@@ -13,7 +13,8 @@ from .views import (
     MessageLikeToggleView,
     VoiceInteractionView,
     VoiceMessageView,
-    StreamChatMessageView
+    StreamChatMessageView,
+    ContextSourcesView
 
 )
 
@@ -39,5 +40,7 @@ urlpatterns = [
     path('<int:chat_pk>/voice-message/', VoiceMessageView.as_view(), name='chat-voice-message'),
     path('<int:pk>/stream/', StreamChatMessageView.as_view(), name='chat-message-stream'),
 
+    # Context Sources - Nested under chat ID
+    path('<int:chat_id>/context-sources/', ContextSourcesView.as_view(), name='context-sources'),
 
 ]
