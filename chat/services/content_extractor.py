@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
 from youtube_transcript_api import YouTubeTranscriptApi
+import trafilatura
 from chat.file_processor import FileProcessor
 
 logger = logging.getLogger(__name__)
@@ -12,8 +13,8 @@ class ContentExtractor:
     """
     Service to extract text content from various sources:
     - Files (PDF, DOCX, TXT) via FileProcessor
-    - URLs (Web pages) via BeautifulSoup
-    - YouTube Videos via YouTubeTranscriptApi
+    - URLs (Web pages) via Trafilatura (fallback to BeautifulSoup)
+    - YouTube Videos via YouTubeTranscriptApi (fallback to Gemini transcription)
     """
 
     @staticmethod
@@ -71,8 +72,16 @@ class ContentExtractor:
             return full_text
 
         except Exception as e:
-            logger.error(f"Erro ao extrair do YouTube ({url}): {e}")
-            return f"Erro ao processar vídeo do YouTube: {str(e)}"
+            logger.warning(f"YouTubeTranscriptApi failed for {url}: {e}. Trying fallback with Gemini...")
+
+            # Import here to avoid circular dependencies if any
+            from chat.services.transcription_service import transcribe_youtube_video
+
+            result = transcribe_youtube_video(url)
+            if result.get('success'):
+                return result.get('transcription', '')
+            else:
+                return f"Erro ao processar vídeo do YouTube (Fallback): {result.get('error')}"
 
     @staticmethod
     def _get_youtube_video_id(url: str) -> str:
@@ -83,7 +92,10 @@ class ContentExtractor:
         if parsed.netloc == 'youtu.be':
             return parsed.path[1:]
         if parsed.path == '/watch':
-            return parse_qs(parsed.query)['v'][0]
+            try:
+                return parse_qs(parsed.query)['v'][0]
+            except KeyError:
+                return None
         if parsed.path.startswith('/embed/'):
             return parsed.path.split('/')[2]
         if parsed.path.startswith('/v/'):
@@ -99,6 +111,17 @@ class ContentExtractor:
         """
         Extracts main text content from a generic webpage.
         """
+        # 1. Try Trafilatura first
+        try:
+            downloaded = trafilatura.fetch_url(url)
+            if downloaded:
+                text = trafilatura.extract(downloaded, include_comments=False)
+                if text:
+                    return text
+        except Exception as e:
+            logger.warning(f"Trafilatura failed for {url}: {e}")
+
+        # 2. Fallback to BeautifulSoup (existing logic)
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'

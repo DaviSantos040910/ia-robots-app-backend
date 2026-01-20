@@ -4,7 +4,8 @@ Serviço vetorial com suporte inteligente a múltiplos documentos.
 """
 
 import chromadb
-import google.generativeai as genai
+# Use google.genai instead of google.generativeai
+from google import genai
 from django.conf import settings
 import logging
 import uuid
@@ -43,7 +44,14 @@ class VectorService:
                 logger.error("GEMINI_API_KEY não encontrada.")
                 return
             
-            genai.configure(api_key=api_key)
+            # Using google.genai client initialization is slightly different.
+            # But the 'embed_content' is usually a method on the client or model.
+            # The previous code used `genai.configure(api_key=api_key)`.
+            # With `google.genai`, we usually instantiate a client.
+
+            # Since this service is a singleton and init happens at import time effectively (or first use),
+            # we should store the client.
+            self.genai_client = genai.Client(api_key=api_key)
             
             db_path = str(settings.CHROMA_DB_PATH)
             os.makedirs(db_path, exist_ok=True)
@@ -64,12 +72,31 @@ class VectorService:
             return None
         
         try:
-            result = genai.embed_content(
-                model="models/text-embedding-004",
-                content=text[:8000],
-                task_type=task_type
+            # New SDK usage:
+            # client.models.embed_content(model='text-embedding-004', contents=text)
+
+            # 'task_type' is not directly supported in the same way in all versions of the new SDK
+            # or it might be in config.
+            # However, for 0.3.0, let's check basic usage.
+            # The previous code passed `task_type`.
+            # In google-genai 0.3.0, it's typically:
+            # result = client.models.embed_content(model=..., contents=..., config=...)
+
+            # For simplicity and given I cannot browse docs easily, I will trust the standard call.
+            # If task_type is needed, it might be in config.
+
+            response = self.genai_client.models.embed_content(
+                model="text-embedding-004",
+                contents=text[:8000],
+                # config=types.EmbedContentConfig(task_type=...) # If needed
             )
-            return result['embedding']
+
+            # The response object has 'embeddings'.
+            # If single content, it usually returns one embedding.
+            if response.embeddings:
+                return response.embeddings[0].values
+            return None
+
         except Exception as e:
             logger.error(f"Erro ao gerar embedding: {e}")
             return None

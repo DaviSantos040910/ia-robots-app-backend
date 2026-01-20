@@ -3,6 +3,7 @@ import logging
 from typing import List
 import pypdf
 import docx
+import pymupdf4llm
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,8 @@ class FileProcessor:
             return ""
         
         text = ""
+        is_markdown = False
+
         try:
             # Tenta inferir mime_type pela extensão se não fornecido
             if not mime_type:
@@ -30,13 +33,19 @@ class FileProcessor:
             # --- Processamento PDF ---
             if mime_type == 'application/pdf':
                 try:
-                    reader = pypdf.PdfReader(file_path)
-                    for page in reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
+                    # Modernização: Usa PyMuPDF4LLM para extrair Markdown (melhor para tabelas)
+                    text = pymupdf4llm.to_markdown(file_path)
+                    is_markdown = True
                 except Exception as e:
-                    logger.error(f"Erro ao ler PDF: {e}")
+                    logger.warning(f"PyMuPDF4LLM falhou, tentando pypdf fallback: {e}")
+                    try:
+                        reader = pypdf.PdfReader(file_path)
+                        for page in reader.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text += page_text + "\n"
+                    except Exception as e2:
+                         logger.error(f"Erro ao ler PDF: {e2}")
 
             # --- Processamento DOCX ---
             elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
@@ -61,7 +70,11 @@ class FileProcessor:
             logger.error(f"Erro genérico no FileProcessor ({file_path}): {e}")
             return ""
         
-        # Limpeza básica: remove excesso de espaços em branco e quebras de linha múltiplas
+        # Se for Markdown, preservamos a formatação (quebras de linha são importantes)
+        if is_markdown:
+            return text
+
+        # Limpeza básica: remove excesso de espaços em branco e quebras de linha múltiplas para texto plano
         return " ".join(text.split())
 
     @staticmethod
