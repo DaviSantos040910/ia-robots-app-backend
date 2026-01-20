@@ -53,7 +53,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             'difficulty': serializer.validated_data.get('difficulty'),
             'source_ids': serializer.validated_data.get('source_ids'),
             'custom_instructions': serializer.validated_data.get('custom_instructions'),
-            'include_chat_history': serializer.validated_data.get('include_chat_history', False),
             'target_duration': serializer.validated_data.get('duration') # Mapped from 'duration' field
         }
 
@@ -72,14 +71,8 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         client = get_ai_client()
         
         # 1. Retrieve Context
-        # Chat History (Conditional)
+        # Chat History - Removed as requested
         history_text = ""
-        if options.get('include_chat_history'):
-            history, _ = build_conversation_history(artifact.chat_id, limit=20)
-            for entry in history:
-                role = entry.get('role', 'user')
-                text = entry.get('parts', [{}])[0].get('text', '')
-                history_text += f"{role.upper()}: {text}\n"
 
         # RAG Context (Sources)
         rag_context = ""
