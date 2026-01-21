@@ -17,6 +17,40 @@ class SourceAssemblerTest(TestCase):
         self.chat = Chat.objects.create(user=self.user, bot=self.bot)
 
     @patch('chat.file_processor.FileProcessor.extract_text')
+    def test_get_context_caching(self, mock_extract):
+        """Testa o cache read-through do SourceAssemblyService."""
+
+        msg1 = ChatMessage.objects.create(
+            chat=self.chat,
+            role='user',
+            content="File 1",
+            attachment="path/to/file1.pdf",
+            original_filename="file1.pdf",
+            extracted_text=None # Initially empty
+        )
+
+        mock_extract.return_value = "Texto Extraído"
+
+        config = {"selectedSourceIds": [msg1.id]}
+
+        # 1. Primeira chamada: Deve extrair e salvar
+        result1 = SourceAssemblyService.get_context_from_config(self.chat.id, config)
+
+        self.assertIn("Texto Extraído", result1)
+        mock_extract.assert_called_once()
+
+        # Verifica se salvou no banco
+        msg1.refresh_from_db()
+        self.assertEqual(msg1.extracted_text, "Texto Extraído")
+
+        # 2. Segunda chamada: Deve usar o cache (não chamar extrator)
+        mock_extract.reset_mock()
+        result2 = SourceAssemblyService.get_context_from_config(self.chat.id, config)
+
+        self.assertIn("Texto Extraído", result2)
+        mock_extract.assert_not_called()
+
+    @patch('chat.file_processor.FileProcessor.extract_text')
     def test_get_context_files_only(self, mock_extract):
         """Testa a montagem de contexto apenas com arquivos."""
 

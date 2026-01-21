@@ -31,8 +31,20 @@ class SourceAssemblyService:
                         file_path = message.attachment.path
                         file_name = message.original_filename or f"file_{message.id}"
 
-                        # Extrai conteúdo usando o processador da Fase 1
-                        content = FileProcessor.extract_text(file_path)
+                        # Cache Read-Through
+                        content = message.extracted_text
+
+                        if not content:
+                            logger.info(f"Extracting text for message {message.id} (File: {file_name})")
+                            # Extrai conteúdo usando o processador
+                            content = FileProcessor.extract_text(file_path)
+
+                            # Save to cache if successful
+                            if content:
+                                message.extracted_text = content
+                                message.save(update_fields=['extracted_text'])
+                        else:
+                            logger.info(f"Using cached text for message {message.id}")
 
                         if content:
                             context_parts.append(f"\n--- FILE: {file_name} ---\n{content}")

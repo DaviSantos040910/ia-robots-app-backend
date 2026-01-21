@@ -72,6 +72,9 @@ class ChatMessage(models.Model):
     )
     original_filename = models.CharField(max_length=255, null=True, blank=True)
 
+    # Cached content extracted from the attachment for RAG/NotebookLM features
+    extracted_text = models.TextField(null=True, blank=True, help_text="Cached content extracted from the attachment")
+
     duration = models.IntegerField(default=0, help_text="Audio duration in milliseconds")
 
     # --------------------

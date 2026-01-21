@@ -64,7 +64,7 @@ class PodcastGenerationTest(TestCase):
     @patch('studio.services.audio_mixer.AudioSegment')
     @patch('studio.services.audio_mixer.os.makedirs')
     def test_audio_mixer_service(self, mock_makedirs, mock_audio_segment, mock_tts):
-        """Testa o serviço de mixagem isoladamente."""
+        """Testa o serviço de mixagem isoladamente com paralelismo."""
         from studio.services.audio_mixer import AudioMixerService
 
         script = [
@@ -73,6 +73,8 @@ class PodcastGenerationTest(TestCase):
         ]
 
         # Mock TTS success
+        # Agora o generate_tts_audio é chamado em threads.
+        # MagicMock é thread-safe para chamadas? Geralmente sim.
         mock_tts.return_value = {'success': True, 'file_path': 'dummy.wav'}
 
         # Mock AudioSegment interactions
@@ -91,6 +93,7 @@ class PodcastGenerationTest(TestCase):
         self.assertTrue(path.endswith(".mp3"))
 
         # Verifica se chamou TTS duas vezes com vozes diferentes
+        # Como é thread pool, a ordem de chamada pode variar, mas assert_any_call resolve
         self.assertEqual(mock_tts.call_count, 2)
 
         # Alex -> Kore
