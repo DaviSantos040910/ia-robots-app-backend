@@ -1,5 +1,33 @@
 from django.db import models
+from django.conf import settings
 from chat.models import Chat
+
+class KnowledgeSource(models.Model):
+    class SourceType(models.TextChoices):
+        FILE = 'FILE', 'File'
+        URL = 'URL', 'URL'
+        YOUTUBE = 'YOUTUBE', 'YouTube'
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='knowledge_sources')
+    title = models.CharField(max_length=255)
+    source_type = models.CharField(max_length=20, choices=SourceType.choices, default=SourceType.FILE)
+
+    # File upload
+    file = models.FileField(upload_to='library_sources/', null=True, blank=True)
+    # OR URL
+    url = models.URLField(null=True, blank=True)
+
+    # Extracted content for RAG/Context
+    extracted_text = models.TextField(null=True, blank=True)
+
+    # Metadata (e.g. YouTube ID, author, duration)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.source_type})"
 
 class KnowledgeArtifact(models.Model):
     class ArtifactType(models.TextChoices):

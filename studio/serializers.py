@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import KnowledgeArtifact
+from .models import KnowledgeArtifact, KnowledgeSource
 
 class KnowledgeArtifactSerializer(serializers.ModelSerializer):
     # Write-only configuration fields
@@ -110,3 +110,17 @@ class KnowledgeArtifactSerializer(serializers.ModelSerializer):
             for field in required:
                 if field not in item:
                     raise serializers.ValidationError({"content": f"Item {idx} missing required field '{field}'."})
+
+class KnowledgeSourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = KnowledgeSource
+        fields = [
+            'id', 'user', 'title', 'source_type',
+            'file', 'url', 'extracted_text', 'metadata',
+            'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'user', 'extracted_text']
+        extra_kwargs = {
+            'file': {'required': False, 'allow_null': True},
+            'url': {'required': False, 'allow_null': True}
+        }

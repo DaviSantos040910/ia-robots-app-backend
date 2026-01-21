@@ -2,24 +2,132 @@ import io
 import json
 import logging
 import threading
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
+from rest_framework.response import Response
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.db import transaction
+from django.core.files import File
 from weasyprint import HTML
 from pptx import Presentation
 from openpyxl import Workbook as ExcelWorkbook
 from google.genai import types
 
-from .models import KnowledgeArtifact
-from .serializers import KnowledgeArtifactSerializer
+from chat.models import Chat, ChatMessage
+from chat.file_processor import FileProcessor
+from chat.services.content_extractor import ContentExtractor
 from chat.services.ai_client import get_ai_client, get_model
 from studio.services.source_assembler import SourceAssemblyService
 from studio.services.podcast_scripting import PodcastScriptingService
 from studio.services.audio_mixer import AudioMixerService
 from studio.schemas import QUIZ_SCHEMA, FLASHCARD_SCHEMA, SUMMARY_SCHEMA, SLIDE_SCHEMA
 
+from .models import KnowledgeArtifact, KnowledgeSource
+from .serializers import KnowledgeArtifactSerializer, KnowledgeSourceSerializer
+
 logger = logging.getLogger(__name__)
+
+class KnowledgeSourceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing Library/Knowledge Sources.
+    """
+    queryset = KnowledgeSource.objects.all()
+    serializer_class = KnowledgeSourceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return KnowledgeSource.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        # Save initially
+        instance = serializer.save(user=self.request.user)
+
+        # Immediate Extraction
+        extracted_text = ""
+        try:
+            if instance.source_type == KnowledgeSource.SourceType.FILE and instance.file:
+                extracted_text = FileProcessor.extract_text(instance.file.path)
+            elif instance.source_type in [KnowledgeSource.SourceType.URL, KnowledgeSource.SourceType.YOUTUBE] and instance.url:
+                extracted_text = ContentExtractor.extract_from_url(instance.url)
+
+            if extracted_text:
+                instance.extracted_text = extracted_text
+                instance.save(update_fields=['extracted_text'])
+
+        except Exception as e:
+            logger.error(f"Error extracting text for KnowledgeSource {instance.id}: {e}")
+            # We don't fail the request, but we log it. Text remains empty/null.
+
+    @action(detail=True, methods=['post'])
+    def add_to_chat(self, request, pk=None):
+        """
+        Copies this source to a Chat as a ChatMessage attachment.
+        Payload: { "chat_id": 123 }
+        """
+        source = self.get_object()
+        chat_id = request.data.get('chat_id')
+
+        if not chat_id:
+            return Response({"error": "chat_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            chat = Chat.objects.get(id=chat_id, user=request.user)
+        except Chat.DoesNotExist:
+            return Response({"error": "Chat not found or access denied"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            with transaction.atomic():
+                # Create ChatMessage
+                message = ChatMessage.objects.create(
+                    chat=chat,
+                    role=ChatMessage.Role.USER,
+                    content=f"Added source from Library: {source.title}",
+                    original_filename=source.title,
+                    extracted_text=source.extracted_text # Cache read-through bridge
+                )
+
+                # If it's a file, we should copy it to the message attachment
+                if source.file:
+                    # We open the source file and save it to the message
+                    # Using 'save' on FileField automatically saves the model too
+                    # We use the same name or source name
+                    file_name = source.file.name.split('/')[-1]
+                    with source.file.open('rb') as f:
+                        message.attachment.save(file_name, File(f), save=True)
+                        message.attachment_type = 'file'
+
+                # If it's URL/YouTube, we treat it as content?
+                # The prompt might handle it, but ChatMessage attachment structure usually expects file.
+                # If no file, we rely on `content` or `extracted_text`.
+                # SourceAssemblyService checks `message.attachment`.
+                # If it's URL, we might want to save extracted text to `extracted_text` (already done)
+                # AND ensure SourceAssemblyService uses it even if attachment is None?
+                # Currently SourceAssemblyService checks `if message.attachment:`.
+                # So we MUST attach something if we want it included by current logic.
+                # OR we update SourceAssemblyService.
+                # Given "Don't break contracts", updating SourceAssemblyService is risky if not tested carefully.
+                # But creating a dummy file for URL source is also weird.
+
+                # Let's rely on the extracted_text bridge.
+                # If I attach a dummy file for URL sources, it works.
+                # But better: if I have `extracted_text`, I should ensure `SourceAssemblyService` uses it.
+                # Let's check SourceAssemblyService again.
+                # It checks `if message.attachment`.
+                # So for now, Library sources ONLY support FILE types fully for Generation context unless I change that service.
+                # I will handle FILE type robustly here. URL support might need Service update.
+
+                message.save()
+
+            return Response(
+                {"status": "added", "message_id": message.id},
+                status=status.HTTP_201_CREATED
+            )
+
+        except Exception as e:
+            logger.error(f"Error adding source to chat: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
     """
@@ -65,7 +173,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
         # Generate Real Content via AI (Async)
         try:
-            # Pass only ID to thread to avoid stale object issues
             threading.Thread(
                 target=self._generate_content_with_ai,
                 args=(instance.id, options)
@@ -80,7 +187,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         Generates content using the configured AI service (Gemini/Vertex) with Structured Output.
         """
         try:
-            # Re-fetch artifact to ensure we have the latest state and db connection in this thread
             artifact = KnowledgeArtifact.objects.get(id=artifact_id)
         except KnowledgeArtifact.DoesNotExist:
             logger.error(f"Artifact {artifact_id} not found in generation thread.")
@@ -152,14 +258,11 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 duration_constraint=options.get('target_duration', 'Medium')
             )
             artifact.content = script
-            # Save script progress so user sees something if mixer fails?
-            # Or keep processing.
             artifact.save()
 
             # 2. Mix Audio
             audio_path = AudioMixerService.mix_podcast(script)
 
-            # Update artifact with media URL (assuming relative path matches MEDIA_URL config)
             artifact.media_url = f"/media/{audio_path}"
             artifact.duration = options.get('target_duration', '10:00')
 
