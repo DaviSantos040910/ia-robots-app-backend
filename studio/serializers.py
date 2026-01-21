@@ -30,6 +30,16 @@ class KnowledgeArtifactSerializer(serializers.ModelSerializer):
             'status': {'read_only': True}
         }
 
+    def create(self, validated_data):
+        # Remove fields that are not part of the model
+        validated_data.pop('quantity', None)
+        validated_data.pop('difficulty', None)
+        validated_data.pop('source_ids', None)
+        validated_data.pop('custom_instructions', None)
+        validated_data.pop('duration', None)
+
+        return super().create(validated_data)
+
     def validate(self, data):
         """
         Validate content structure based on artifact type.

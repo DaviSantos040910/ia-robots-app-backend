@@ -9,10 +9,10 @@ from .ai_client import get_ai_client
 logger = logging.getLogger(__name__)
 
 
-def generate_tts_audio(message_text: str, output_path: str) -> dict:
+def generate_tts_audio(message_text: str, output_path: str, voice_name: str = "Kore") -> dict:
     """
     Gera áudio TTS usando Gemini e calcula a duração do arquivo WAV.
-    Lógica idêntica à generate_tts_audio em ai_service.py.
+    Agora suporta escolha de voz (e.g., 'Kore', 'Puck', 'Fenrir').
     """
     try:
         client = get_ai_client()
@@ -27,7 +27,7 @@ def generate_tts_audio(message_text: str, output_path: str) -> dict:
                 response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(
                     voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
                     )
                 )
             )

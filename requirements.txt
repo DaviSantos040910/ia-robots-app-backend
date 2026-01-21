@@ -22,3 +22,4 @@ pymupdf4llm
 yt-dlp
 sendgrid
 django-ratelimit
+pydub

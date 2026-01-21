@@ -8,11 +8,15 @@ from django.template.loader import render_to_string
 from weasyprint import HTML
 from pptx import Presentation
 from openpyxl import Workbook as ExcelWorkbook
+from google.genai import types
+
 from .models import KnowledgeArtifact
 from .serializers import KnowledgeArtifactSerializer
-from chat.services.ai_client import get_ai_client
-from chat.services.context_builder import build_conversation_history
-from chat.vector_service import vector_service
+from chat.services.ai_client import get_ai_client, get_model
+from studio.services.source_assembler import SourceAssemblyService
+from studio.services.podcast_scripting import PodcastScriptingService
+from studio.services.audio_mixer import AudioMixerService
+from studio.schemas import QUIZ_SCHEMA, FLASHCARD_SCHEMA, SUMMARY_SCHEMA, SLIDE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -66,66 +70,85 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
     def _generate_content_with_ai(self, artifact, options):
         """
-        Generates content using the configured AI service (Gemini/Vertex).
+        Generates content using the configured AI service (Gemini/Vertex) with Structured Output.
         """
+        
+        # 1. Retrieve Context using SourceAssemblyService
+        config = {
+            'selectedSourceIds': options.get('source_ids', []),
+            'includeChatContext': True # Always include chat context for artifacts as per modern approach
+        }
+        full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
+
+        # Handle Podcast flow separately
+        if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
+            try:
+                # 1. Generate Script
+                script = PodcastScriptingService.generate_script(
+                    title=artifact.title,
+                    context=full_context,
+                    duration_constraint=options.get('target_duration', 'Medium')
+                )
+                artifact.content = script
+                artifact.save()
+
+                # 2. Mix Audio
+                audio_path = AudioMixerService.mix_podcast(script)
+
+                # Update artifact with media URL (assuming relative path matches MEDIA_URL config)
+                # In a real setup, we might upload to S3 here.
+                # For local dev, we assume standard media serving.
+                artifact.media_url = f"/media/{audio_path}"
+                artifact.duration = options.get('target_duration', '10:00') # Placeholder until we calc real duration
+
+                artifact.status = KnowledgeArtifact.Status.READY
+                artifact.save()
+                return
+
+            except Exception as e:
+                logger.error(f"Podcast Generation Failed: {e}")
+                artifact.status = KnowledgeArtifact.Status.ERROR
+                artifact.save()
+                return
+
+        # Standard Artifact Generation (Quiz, Slide, etc.)
         client = get_ai_client()
-        
-        # 1. Retrieve Context
-        # Chat History - Removed as requested
-        history_text = ""
+        model_name = get_model('chat') # Use consistent model name
 
-        # RAG Context (Sources)
-        rag_context = ""
-        allowed_sources = options.get('source_ids')
+        # 2. Build Prompt
+        system_instruction, response_schema = self._build_prompt_and_schema(artifact.type, artifact.title, full_context, options)
         
-        # Determine query for RAG based on title + instructions
-        # Use instructions if available, otherwise title
-        query_text = options.get('custom_instructions') or f"Generar {artifact.title}"
-        
-        doc_contexts, _ = vector_service.search_context(
-            query_text, 
-            artifact.chat.user.id, 
-            artifact.chat.bot.id, 
-            limit=6, 
-            allowed_sources=allowed_sources
-        )
-        
-        if doc_contexts:
-            rag_context = "SOURCE DOCUMENTS:\n" + "\n".join(doc_contexts) + "\n\n"
-
-        # 2. Build Prompt based on Type
-        prompt = self._build_prompt(artifact.type, artifact.title, history_text, rag_context, options)
-        
-        # 3. Call AI
-        # Using a model that supports JSON output would be ideal.
-        # Here we ask for JSON in the prompt.
+        # 3. Call AI with Structured Output
         try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=prompt
+            generate_config = types.GenerateContentConfig(
+                temperature=0.7,
+                system_instruction=system_instruction,
+                response_mime_type="application/json"
             )
             
-            response_text = response.text
-            
-            # Clean up potential markdown blocks ```json ... ```
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                 response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Only add schema if it exists for the type
+            if response_schema:
+                generate_config.response_schema = response_schema
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents="Generate the artifact content based on the system instructions and context.",
+                config=generate_config
+            )
 
             # 4. Parse & Save
-            if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
-                # Podcast generation is complex (TTS). For MVP, we might still mock the URL 
-                # or if we have a TTS service, call it here.
-                # Assuming the instruction implies TEXT generation for content, 
-                # but Podcast needs audio.
-                # Fallback to a default audio for MVP unless we have a TTS service ready.
-                artifact.media_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-                artifact.duration = "5:30"
-                # Optionally save the script
-                # artifact.content = json.loads(response_text) 
+            if response.parsed:
+                artifact.content = response.parsed
             else:
-                artifact.content = json.loads(response_text)
+                # Fallback if parsed is empty but text exists (should be JSON)
+                try:
+                    artifact.content = json.loads(response.text)
+                except:
+                     # Fallback for Summary schema which might return object but model output simple text sometimes if not strict
+                     if artifact.type == KnowledgeArtifact.ArtifactType.SUMMARY:
+                         artifact.content = {"summary": response.text}
+                     else:
+                         raise ValueError("Failed to parse JSON response")
 
             artifact.status = KnowledgeArtifact.Status.READY
             artifact.save()
@@ -135,104 +158,44 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             artifact.status = KnowledgeArtifact.Status.ERROR
             artifact.save()
 
-    def _build_prompt(self, artifact_type, title, history, rag_context, options):
+    def _build_prompt_and_schema(self, artifact_type, title, context, options):
         difficulty = options.get('difficulty', 'Medium')
         quantity = options.get('quantity', 10)
         instructions = options.get('custom_instructions', '')
-        target_duration = options.get('target_duration', 'Medium')
 
         base_instruction = (
             f"You are an expert educational content generator. "
             f"Create a {artifact_type} titled '{title}'.\n"
-            f"Output MUST be a valid, strict JSON object. Do not include any preamble or markdown.\n"
             f"Language: Detect the language from the context (default to Portuguese if unclear).\n"
+            f"Target Audience Difficulty: {difficulty}.\n"
         )
         
-        # Only add difficulty context if not Podcast (or logic as requested)
-        # But user requested mapping Duration to word count for podcast.
-        if artifact_type != KnowledgeArtifact.ArtifactType.PODCAST:
-             base_instruction += f"Target Audience Difficulty: {difficulty}.\n\n"
-
         if instructions:
-            base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n\n"
+            base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n"
 
-        if rag_context:
-            base_instruction += f"REFERENCE MATERIALS (Use these as the primary source of truth):\n{rag_context}\n"
-        
-        if history:
-            base_instruction += f"CONVERSATION HISTORY (Context):\n{history}\n"
+        base_instruction += f"\nCONTEXT MATERIAL:\n{context}\n"
 
-        base_instruction += "\nJSON STRUCTURE REQUIRED:\n"
+        schema = None
 
         if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
-            return base_instruction + (
-                "[\n"
-                "  {\n"
-                "    \"question\": \"Question text\",\n"
-                "    \"options\": [\"Option A\", \"Option B\", \"Option C\", \"Option D\"],\n"
-                "    \"correctAnswerIndex\": 0\n"
-                "  }\n"
-                "]\n"
-                f"Generate exactly {quantity} questions."
-            )
+            base_instruction += f"Generate exactly {quantity} questions."
+            schema = QUIZ_SCHEMA
         
-        elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
-            return base_instruction + (
-                "[\n"
-                "  {\n"
-                "    \"title\": \"Slide Title\",\n"
-                "    \"bullets\": [\"Bullet 1\", \"Bullet 2\"]\n"
-                "  }\n"
-                "]\n"
-                f"Generate exactly {quantity} slides."
-            )
-
         elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
-            return base_instruction + (
-                "[\n"
-                "  {\n"
-                "    \"front\": \"Concept/Term\",\n"
-                "    \"back\": \"Definition/Explanation\"\n"
-                "  }\n"
-                "]\n"
-                f"Generate exactly {quantity} cards."
-            )
-
-        elif artifact_type == KnowledgeArtifact.ArtifactType.SPREADSHEET:
-            return base_instruction + (
-                 "[\n"
-                 "  [\"Header 1\", \"Header 2\"],\n"
-                 "  [\"Row 1 Col 1\", \"Row 1 Col 2\"]\n"
-                 "]\n"
-                 "Generate a dataset relevant to the topic."
-            )
-        
-        elif artifact_type == KnowledgeArtifact.ArtifactType.PODCAST:
-            # Duration Mapping
-            if target_duration == 'Short':
-                duration_prompt = "Create a concise 5-minute summary script (approx 800 words). Focus only on key takeaways."
-            elif target_duration == 'Long':
-                duration_prompt = "Create an extensive 30-minute comprehensive guide (approx 3500 words). Cover all nuances and sources in depth."
-            else: # Medium
-                duration_prompt = "Create a detailed 15-minute deep-dive script (approx 2000 words). Include examples and elaboration."
-
-            return base_instruction + (
-                 "{\n"
-                 "  \"title\": \"Episode Title\",\n"
-                 "  \"script\": \"Full text of the podcast script...\",\n"
-                 "  \"hosts\": [\"Host 1\", \"Host 2\"]\n"
-                 "}\n"
-                 f"DURATION CONSTRAINT: {duration_prompt}"
-            )
+            base_instruction += f"Generate exactly {quantity} cards."
+            schema = FLASHCARD_SCHEMA
 
         elif artifact_type == KnowledgeArtifact.ArtifactType.SUMMARY:
-             return base_instruction + (
-                 "Output should be a JSON string, e.g. \"Summary text...\" "
-                 "or a JSON object with a text field if preferred, but simpler is better."
-             )
+            base_instruction += "Generate a comprehensive summary and key points."
+            schema = SUMMARY_SCHEMA
+
+        elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
+            base_instruction += f"Generate exactly {quantity} slides."
+            schema = SLIDE_SCHEMA
+
+        # Add other types here or handle generic JSON requirement
         
-        else:
-             return base_instruction + "Generate a detailed summary in JSON format."
+        return base_instruction, schema
 
     @action(detail=True, methods=['get'])
     def export(self, request, pk=None):
@@ -270,10 +233,16 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
                 bullets = page.get('bullets', [])
                 if bullets:
-                    tf.text = bullets[0] # Primeiro bullet
-                    for b in bullets[1:]:
-                        p = tf.add_paragraph()
-                        p.text = b
+                    # Se bullets for lista de strings, iterar.
+                    # Se for string unica, adicionar.
+                    if isinstance(bullets, list):
+                        if len(bullets) > 0:
+                            tf.text = bullets[0] # Primeiro bullet
+                            for b in bullets[1:]:
+                                p = tf.add_paragraph()
+                                p.text = b
+                    else:
+                         tf.text = str(bullets)
 
             output = io.BytesIO()
             prs.save(output)
