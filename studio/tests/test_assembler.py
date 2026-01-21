@@ -4,6 +4,7 @@ from chat.models import Chat, ChatMessage
 from django.contrib.auth import get_user_model
 from bots.models import Bot
 from studio.services.source_assembler import SourceAssemblyService
+from chat.services.token_service import TokenService
 import json
 
 User = get_user_model()
@@ -49,6 +50,40 @@ class SourceAssemblerTest(TestCase):
 
         self.assertIn("Texto Extraído", result2)
         mock_extract.assert_not_called()
+
+    @patch('chat.file_processor.FileProcessor.extract_text')
+    def test_get_context_token_limit(self, mock_extract):
+        """Testa se o assembler respeita o limite de tokens."""
+
+        # Define um limite: 200 tokens (800 chars)
+        original_limit = SourceAssemblyService.MAX_CONTEXT_TOKENS
+        SourceAssemblyService.MAX_CONTEXT_TOKENS = 200
+
+        try:
+            msg1 = ChatMessage.objects.create(
+                chat=self.chat,
+                role='user',
+                attachment="big.txt",
+                original_filename="big.txt"
+            )
+            # Texto com 300 tokens (1200 chars) -> Deve truncar
+            # MAX(200) - Current(0) = 200 space left
+            # Space Left (200) > 100 -> Should truncate
+            long_text = "a" * 1200
+            mock_extract.return_value = long_text
+
+            config = {"selectedSourceIds": [msg1.id]}
+
+            result = SourceAssemblyService.get_context_from_config(self.chat.id, config)
+
+            self.assertIn("--- FILE: big.txt (Partial) ---", result)
+            self.assertIn("TRUNCATED", result)
+
+            # Should have prefix of roughly 200 tokens * 4 = 800 chars
+            self.assertTrue(len(result) >= 800)
+
+        finally:
+            SourceAssemblyService.MAX_CONTEXT_TOKENS = original_limit
 
     @patch('chat.file_processor.FileProcessor.extract_text')
     def test_get_context_files_only(self, mock_extract):
