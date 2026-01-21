@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import threading
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from django.http import HttpResponse
@@ -54,81 +55,58 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         request_config = self.request.data.get('config', {})
 
         # Mapeamento estrito do contrato Frontend -> Backend
-        # selectedSourceIds -> source_ids
-        # customInstructions -> custom_instructions
         options = {
             'quantity': request_config.get('quantity') or serializer.validated_data.get('quantity'),
             'difficulty': request_config.get('difficulty') or serializer.validated_data.get('difficulty'),
-
-            # Prioridade para o payload 'config' -> 'selectedSourceIds'
             'source_ids': request_config.get('selectedSourceIds') or serializer.validated_data.get('source_ids'),
-
-            # Prioridade para o payload 'config' -> 'customInstructions'
             'custom_instructions': request_config.get('customInstructions') or serializer.validated_data.get('custom_instructions'),
-
-            # Duration mapping
             'target_duration': request_config.get('duration') or serializer.validated_data.get('duration')
         }
 
+        # Generate Real Content via AI (Async)
         try:
-            # Generate Real Content via AI
-            self._generate_content_with_ai(instance, options)
+            # Pass only ID to thread to avoid stale object issues
+            threading.Thread(
+                target=self._generate_content_with_ai,
+                args=(instance.id, options)
+            ).start()
         except Exception as e:
-            logger.error(f"Error generating artifact content: {e}", exc_info=True)
+            logger.error(f"Error starting artifact generation thread: {e}", exc_info=True)
             instance.status = KnowledgeArtifact.Status.ERROR
             instance.save()
 
-    def _generate_content_with_ai(self, artifact, options):
+    def _generate_content_with_ai(self, artifact_id, options):
         """
         Generates content using the configured AI service (Gemini/Vertex) with Structured Output.
         """
-        
-        # 1. Retrieve Context using SourceAssemblyService
-        # Passa explicitamente a chave 'selectedSourceIds' esperada pelo Service
-        config = {
-            'selectedSourceIds': options.get('source_ids', [])
-            # 'includeChatContext': Removed per audit requirement
-        }
-        full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
-
-        # Handle Podcast flow separately
-        if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
-            try:
-                # 1. Generate Script
-                script = PodcastScriptingService.generate_script(
-                    title=artifact.title,
-                    context=full_context,
-                    duration_constraint=options.get('target_duration', 'Medium')
-                )
-                artifact.content = script
-                artifact.save()
-
-                # 2. Mix Audio
-                audio_path = AudioMixerService.mix_podcast(script)
-
-                # Update artifact with media URL (assuming relative path matches MEDIA_URL config)
-                artifact.media_url = f"/media/{audio_path}"
-                artifact.duration = options.get('target_duration', '10:00')
-
-                artifact.status = KnowledgeArtifact.Status.READY
-                artifact.save()
-                return
-
-            except Exception as e:
-                logger.error(f"Podcast Generation Failed: {e}")
-                artifact.status = KnowledgeArtifact.Status.ERROR
-                artifact.save()
-                return
-
-        # Standard Artifact Generation (Quiz, Slide, etc.)
-        client = get_ai_client()
-        model_name = get_model('chat')
-
-        # 2. Build Prompt
-        system_instruction, response_schema = self._build_prompt_and_schema(artifact.type, artifact.title, full_context, options)
-        
-        # 3. Call AI with Structured Output
         try:
+            # Re-fetch artifact to ensure we have the latest state and db connection in this thread
+            artifact = KnowledgeArtifact.objects.get(id=artifact_id)
+        except KnowledgeArtifact.DoesNotExist:
+            logger.error(f"Artifact {artifact_id} not found in generation thread.")
+            return
+
+        try:
+            # 1. Retrieve Context using SourceAssemblyService
+            config = {
+                'selectedSourceIds': options.get('source_ids', []),
+                # 'includeChatContext': Removed per audit requirement
+            }
+            full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
+
+            # Handle Podcast flow separately
+            if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
+                self._generate_podcast(artifact, full_context, options)
+                return
+
+            # Standard Artifact Generation (Quiz, Slide, etc.)
+            client = get_ai_client()
+            model_name = get_model('chat')
+
+            # 2. Build Prompt
+            system_instruction, response_schema = self._build_prompt_and_schema(artifact.type, artifact.title, full_context, options)
+
+            # 3. Call AI with Structured Output
             generate_config = types.GenerateContentConfig(
                 temperature=0.7,
                 system_instruction=system_instruction,
@@ -160,7 +138,36 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             artifact.save()
 
         except Exception as e:
-            logger.error(f"AI Generation Failed: {e}")
+            logger.error(f"AI Generation Failed for artifact {artifact_id}: {e}")
+            artifact.status = KnowledgeArtifact.Status.ERROR
+            artifact.save()
+
+    def _generate_podcast(self, artifact, context, options):
+        """Helper to handle podcast generation logic."""
+        try:
+            # 1. Generate Script
+            script = PodcastScriptingService.generate_script(
+                title=artifact.title,
+                context=context,
+                duration_constraint=options.get('target_duration', 'Medium')
+            )
+            artifact.content = script
+            # Save script progress so user sees something if mixer fails?
+            # Or keep processing.
+            artifact.save()
+
+            # 2. Mix Audio
+            audio_path = AudioMixerService.mix_podcast(script)
+
+            # Update artifact with media URL (assuming relative path matches MEDIA_URL config)
+            artifact.media_url = f"/media/{audio_path}"
+            artifact.duration = options.get('target_duration', '10:00')
+
+            artifact.status = KnowledgeArtifact.Status.READY
+            artifact.save()
+
+        except Exception as e:
+            logger.error(f"Podcast Generation Failed: {e}")
             artifact.status = KnowledgeArtifact.Status.ERROR
             artifact.save()
 
