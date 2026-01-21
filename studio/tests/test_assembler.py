@@ -55,30 +55,9 @@ class SourceAssemblerTest(TestCase):
         self.assertIn("--- FILE: file2.docx ---", result)
         self.assertIn("Conteúdo do DOCX 2", result)
 
-    @patch('studio.services.source_assembler.build_conversation_history')
-    def test_get_context_with_chat_history(self, mock_build_history):
-        """Testa a inclusão do histórico do chat."""
-
-        # Mock do histórico
-        mock_build_history.return_value = ([
-            {"role": "user", "parts": [{"text": "Olá bot"}]},
-            {"role": "model", "parts": [{"text": "Olá humano"}]}
-        ], None)
-
-        config = {
-            "selectedSourceIds": [],
-            "includeChatContext": True
-        }
-
-        result = SourceAssemblyService.get_context_from_config(self.chat.id, config)
-
-        self.assertIn("--- CHAT HISTORY ---", result)
-        self.assertIn("USER: Olá bot", result)
-        self.assertIn("MODEL: Olá humano", result)
-
     @patch('chat.file_processor.FileProcessor.extract_text')
-    def test_get_context_mixed(self, mock_extract):
-        """Testa arquivos + histórico."""
+    def test_get_context_no_chat_history(self, mock_extract):
+        """Testa que histórico de chat NÃO é incluído, mesmo se solicitado (feature removida)."""
         msg1 = ChatMessage.objects.create(
             chat=self.chat,
             role='user',
@@ -87,21 +66,13 @@ class SourceAssemblerTest(TestCase):
         )
         mock_extract.return_value = "Texto do Arquivo"
 
-        # Mock do histórico via patch interno da função seria complexo,
-        # então vamos confiar que ele chama a função mockada no teste anterior
-        # ou vamos mockar build_conversation_history novamente aqui se quisermos testar integração
+        config = {
+            "selectedSourceIds": [msg1.id],
+            "includeChatContext": True # Deve ser ignorado
+        }
 
-        with patch('studio.services.source_assembler.build_conversation_history') as mock_hist:
-            mock_hist.return_value = ([{"role": "user", "parts": [{"text": "Histórico"}]}], None)
+        result = SourceAssemblyService.get_context_from_config(self.chat.id, config)
 
-            config = {
-                "selectedSourceIds": [msg1.id],
-                "includeChatContext": True
-            }
-
-            result = SourceAssemblyService.get_context_from_config(self.chat.id, config)
-
-            self.assertIn("--- FILE: dummy.txt ---", result)
-            self.assertIn("Texto do Arquivo", result)
-            self.assertIn("--- CHAT HISTORY ---", result)
-            self.assertIn("USER: Histórico", result)
+        self.assertIn("--- FILE: dummy.txt ---", result)
+        self.assertIn("Texto do Arquivo", result)
+        self.assertNotIn("--- CHAT HISTORY ---", result)

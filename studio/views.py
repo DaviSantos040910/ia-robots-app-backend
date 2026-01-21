@@ -50,14 +50,24 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         # Save initially (status is PROCESSING by default in model)
         instance = serializer.save()
 
-        # Extract config fields from serializer context/data
-        # Note: serializer.validated_data contains write_only fields
+        # Auditoria: Extração de config do payload JSON { "config": { ... } }
+        request_config = self.request.data.get('config', {})
+
+        # Mapeamento estrito do contrato Frontend -> Backend
+        # selectedSourceIds -> source_ids
+        # customInstructions -> custom_instructions
         options = {
-            'quantity': serializer.validated_data.get('quantity'),
-            'difficulty': serializer.validated_data.get('difficulty'),
-            'source_ids': serializer.validated_data.get('source_ids'),
-            'custom_instructions': serializer.validated_data.get('custom_instructions'),
-            'target_duration': serializer.validated_data.get('duration') # Mapped from 'duration' field
+            'quantity': request_config.get('quantity') or serializer.validated_data.get('quantity'),
+            'difficulty': request_config.get('difficulty') or serializer.validated_data.get('difficulty'),
+
+            # Prioridade para o payload 'config' -> 'selectedSourceIds'
+            'source_ids': request_config.get('selectedSourceIds') or serializer.validated_data.get('source_ids'),
+
+            # Prioridade para o payload 'config' -> 'customInstructions'
+            'custom_instructions': request_config.get('customInstructions') or serializer.validated_data.get('custom_instructions'),
+
+            # Duration mapping
+            'target_duration': request_config.get('duration') or serializer.validated_data.get('duration')
         }
 
         try:
@@ -74,9 +84,10 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         """
         
         # 1. Retrieve Context using SourceAssemblyService
+        # Passa explicitamente a chave 'selectedSourceIds' esperada pelo Service
         config = {
-            'selectedSourceIds': options.get('source_ids', []),
-            'includeChatContext': True # Always include chat context for artifacts as per modern approach
+            'selectedSourceIds': options.get('source_ids', [])
+            # 'includeChatContext': Removed per audit requirement
         }
         full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
 
@@ -96,10 +107,8 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 audio_path = AudioMixerService.mix_podcast(script)
 
                 # Update artifact with media URL (assuming relative path matches MEDIA_URL config)
-                # In a real setup, we might upload to S3 here.
-                # For local dev, we assume standard media serving.
                 artifact.media_url = f"/media/{audio_path}"
-                artifact.duration = options.get('target_duration', '10:00') # Placeholder until we calc real duration
+                artifact.duration = options.get('target_duration', '10:00')
 
                 artifact.status = KnowledgeArtifact.Status.READY
                 artifact.save()
@@ -113,7 +122,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
         # Standard Artifact Generation (Quiz, Slide, etc.)
         client = get_ai_client()
-        model_name = get_model('chat') # Use consistent model name
+        model_name = get_model('chat')
 
         # 2. Build Prompt
         system_instruction, response_schema = self._build_prompt_and_schema(artifact.type, artifact.title, full_context, options)
@@ -126,7 +135,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 response_mime_type="application/json"
             )
             
-            # Only add schema if it exists for the type
             if response_schema:
                 generate_config.response_schema = response_schema
 
@@ -140,11 +148,9 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             if response.parsed:
                 artifact.content = response.parsed
             else:
-                # Fallback if parsed is empty but text exists (should be JSON)
                 try:
                     artifact.content = json.loads(response.text)
                 except:
-                     # Fallback for Summary schema which might return object but model output simple text sometimes if not strict
                      if artifact.type == KnowledgeArtifact.ArtifactType.SUMMARY:
                          artifact.content = {"summary": response.text}
                      else:
@@ -173,7 +179,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         if instructions:
             base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n"
 
-        base_instruction += f"\nCONTEXT MATERIAL:\n{context}\n"
+        base_instruction += f"\nCONTEXT MATERIAL (Source Files Only):\n{context}\n"
 
         schema = None
 
@@ -192,8 +198,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
             base_instruction += f"Generate exactly {quantity} slides."
             schema = SLIDE_SCHEMA
-
-        # Add other types here or handle generic JSON requirement
         
         return base_instruction, schema
 
@@ -233,8 +237,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
                 bullets = page.get('bullets', [])
                 if bullets:
-                    # Se bullets for lista de strings, iterar.
-                    # Se for string unica, adicionar.
                     if isinstance(bullets, list):
                         if len(bullets) > 0:
                             tf.text = bullets[0] # Primeiro bullet
@@ -264,7 +266,6 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             # Se for lista, tenta iterar
             if isinstance(artifact.content, list):
                 for item in artifact.content:
-                    # Simplificação: Dump do item como string se for complexo
                     ws.append([str(item)])
             elif isinstance(artifact.content, str):
                 ws['A2'] = artifact.content
@@ -278,18 +279,10 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             return response
 
         # 4. DOCUMENTOS RICOS (PDF via HTML)
-        # Aplica-se a: WORKBOOK, FLASHCARD, QUIZ, SUMMARY
         else:
-            # Prepara o contexto para o template Jinja2/Django
             context = {'artifact': artifact, 'content': artifact.content}
-
-            # Renderiza HTML
             html_string = render_to_string('studio/pdf_template.html', context)
-
-            # Converte para PDF
             response = HttpResponse(content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="{artifact.title}.pdf"'
-
             HTML(string=html_string).write_pdf(response)
-
             return response
