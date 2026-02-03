@@ -1,5 +1,5 @@
 # bots/views.py
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, parsers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Bot
@@ -12,6 +12,7 @@ class BotListCreateView(generics.ListCreateAPIView):
     """
     serializer_class = BotSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         return Bot.objects.filter(owner=self.request.user)
@@ -48,9 +49,16 @@ class BotDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Bot.objects.all()
     serializer_class = BotDetailSerializer 
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         return Bot.objects.all()
+    
+    def get_serializer_class(self):
+        # Use BotSerializer for write operations (update/create) to support all fields
+        if self.request.method in ['PUT', 'PATCH', 'POST']:
+            return BotSerializer
+        return BotDetailSerializer
 
 class SubscribeBotView(APIView):
     """

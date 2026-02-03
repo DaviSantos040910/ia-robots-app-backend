@@ -29,14 +29,19 @@ class Bot(models.Model):
     description = models.CharField(max_length=255, blank=True, help_text="A short description of what the bot does.")
     prompt = models.TextField()
     avatar_url = models.ImageField(upload_to='bot_avatars/', null=True, blank=True)
+    
     voice = models.CharField(max_length=50, default='EnergeticYouth')
     
     # --- NEW: Flag to enable web search capability ---
     allow_web_search = models.BooleanField(default=False)
+    strict_context = models.BooleanField(default=False)
 
     publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PUBLIC)
     is_official = models.BooleanField(default=False)
     categories = models.ManyToManyField(Category, related_name='bots', blank=True)
+    
+    # Study Spaces this bot belongs to
+    study_spaces = models.ManyToManyField('studio.StudySpace', related_name='bots', blank=True)
     
     # This field will store which users have added this bot to their personal list.
     subscribers = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='subscribed_bots', blank=True)

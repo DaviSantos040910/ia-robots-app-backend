@@ -100,3 +100,29 @@ class StudioIntegrationTests(APITestCase):
         response = self.client.post(self.url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('type', response.data)
+
+    def test_study_space_crud(self):
+        """
+        Teste 4: CRUD de Espaços de Estudo
+        """
+        url = '/api/v1/studio/spaces/'
+        data = {
+            'title': 'My Space',
+            'description': 'A nice place'
+        }
+        
+        # Create
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['title'], 'My Space')
+        space_id = response.data['id']
+        
+        # List
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        
+        # Retrieve
+        response = self.client.get(f"{url}{space_id}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['title'], 'My Space')

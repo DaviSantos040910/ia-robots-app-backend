@@ -160,8 +160,9 @@ def get_ai_response(
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id)
         bot = chat.bot
 
-        # --- Recupera flag de Web Search ---
+        # --- Recupera flag de Web Search e Strict Context ---
         allow_web_search = getattr(bot, 'allow_web_search', False)
+        strict_context = getattr(bot, 'strict_context', False)
 
         user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente útil."
         user_name = chat.user.first_name if chat.user.first_name else "Usuário"
@@ -181,7 +182,8 @@ def get_ai_response(
             memory_contexts=memory_contexts,
             current_time=current_time_str,
             available_docs=available_doc_names,
-            allow_web_search=allow_web_search # Passa a flag para o construtor de prompt
+            allow_web_search=allow_web_search, # Passa a flag para o construtor de prompt
+            strict_context=strict_context
         )
 
         generation_config = types.GenerateContentConfig(
@@ -266,8 +268,9 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id, user_id=user_id)
         bot = chat.bot
 
-        # --- Recupera flag de Web Search ---
+        # --- Recupera flag de Web Search e Strict Context ---
         allow_web_search = getattr(bot, 'allow_web_search', False)
+        strict_context = getattr(bot, 'strict_context', False)
 
         yield f"data: {json.dumps({'type': 'start', 'status': 'processing'})}\n\n"
 
@@ -288,7 +291,8 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             memory_contexts=memory_contexts,
             current_time=current_time_str,
             available_docs=available_docs,
-            allow_web_search=allow_web_search # --- Passa flag para o system prompt ---
+            allow_web_search=allow_web_search, # --- Passa flag para o system prompt ---
+            strict_context=strict_context
         )
 
         config = types.GenerateContentConfig(

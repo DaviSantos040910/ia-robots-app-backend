@@ -1,6 +1,7 @@
 # bots/serializers.py
 from rest_framework import serializers
 from .models import Bot, Category
+from studio.models import StudySpace
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth import get_user_model
@@ -23,13 +24,25 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ('id', 'name', 'translation_key')
 
+class MultipartListField(serializers.ListField):
+    """
+    Custom ListField that handles QueryDict (FormData) correctly by using getlist.
+    """
+    def get_value(self, dictionary):
+        if hasattr(dictionary, 'getlist'):
+            return dictionary.getlist(self.field_name, [])
+        return dictionary.get(self.field_name, [])
+
 class BotSerializer(serializers.ModelSerializer):
     """
     General purpose serializer for the Bot model.
     """
     categories = CategorySerializer(many=True, read_only=True)
-    category_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(), source='categories', write_only=True, many=True, required=False
+    category_ids = MultipartListField(
+        child=serializers.IntegerField(), write_only=True, required=False
+    )
+    study_space_ids = MultipartListField(
+        child=serializers.IntegerField(), write_only=True, required=False
     )
     owner_username = serializers.ReadOnlyField(source='owner.username')
 
@@ -37,9 +50,9 @@ class BotSerializer(serializers.ModelSerializer):
         model = Bot
         fields = (
             'id', 'name', 'description','prompt', 'avatar_url', 'voice',
-            'allow_web_search', # Added allow_web_search here
+            'allow_web_search', 'strict_context',
             'publicity', 'is_official', 'owner', 'owner_username',
-            'categories', 'category_ids'
+            'categories', 'category_ids', 'study_space_ids'
         )
         read_only_fields = ('owner',)
 
@@ -47,6 +60,32 @@ class BotSerializer(serializers.ModelSerializer):
         if len(value) > 3:
             raise serializers.ValidationError("You can select a maximum of 3 categories.")
         return value
+
+    def create(self, validated_data):
+        cat_ids = validated_data.pop('category_ids', [])
+        space_ids = validated_data.pop('study_space_ids', [])
+        
+        bot = super().create(validated_data)
+        
+        if cat_ids:
+            bot.categories.set(cat_ids)
+        if space_ids:
+            bot.study_spaces.set(space_ids)
+            
+        return bot
+
+    def update(self, instance, validated_data):
+        cat_ids = validated_data.pop('category_ids', None)
+        space_ids = validated_data.pop('study_space_ids', None)
+        
+        instance = super().update(instance, validated_data)
+        
+        if cat_ids is not None:
+            instance.categories.set(cat_ids)
+        if space_ids is not None:
+            instance.study_spaces.set(space_ids)
+            
+        return instance
 
 
 class BotDetailSerializer(serializers.ModelSerializer):
@@ -59,14 +98,15 @@ class BotDetailSerializer(serializers.ModelSerializer):
     settings = serializers.SerializerMethodField()
     handle = serializers.ReadOnlyField(source='owner.username')
     
-    avatarUrl = serializers.URLField(source='avatar_url', read_only=True)
+    avatarUrl = serializers.ImageField(source='avatar_url', read_only=True, use_url=True)
 
     class Meta:
         model = Bot
         fields = (
-            'id', 'name', 'handle', 
+            'id', 'name', 'handle', 'description', 'prompt',
             'avatarUrl',
-            'stats', 'tags', 'createdByMe', 'settings'
+            'stats', 'tags', 'createdByMe', 'settings', 'categories',
+            'allow_web_search', 'strict_context', 'study_spaces'
         )
 
 
@@ -109,5 +149,6 @@ class BotDetailSerializer(serializers.ModelSerializer):
         return {
             "voice": obj.voice,
             "publicity": obj.publicity,
-            "allow_web_search": obj.allow_web_search # Added allow_web_search to settings output
+            "allow_web_search": obj.allow_web_search,
+            "strict_context": obj.strict_context
         }

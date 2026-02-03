@@ -29,6 +29,24 @@ class KnowledgeSource(models.Model):
     def __str__(self):
         return f"{self.title} ({self.source_type})"
 
+class StudySpace(models.Model):
+    """
+    Groups Knowledge Sources into a study space.
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='study_spaces')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    cover_image = models.ImageField(upload_to='study_spaces/', null=True, blank=True)
+    
+    # Relationship with KnowledgeSource (Many-to-Many)
+    sources = models.ManyToManyField(KnowledgeSource, related_name='study_spaces', blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
 class KnowledgeArtifact(models.Model):
     class ArtifactType(models.TextChoices):
         SLIDE = 'SLIDE', 'Slide'

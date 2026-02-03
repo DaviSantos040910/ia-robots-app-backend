@@ -74,7 +74,8 @@ def build_system_instruction(
     memory_contexts: List[str],
     current_time: str,
     available_docs: Optional[List[str]] = None,
-    allow_web_search: bool = False
+    allow_web_search: bool = False,
+    strict_context: bool = False
 ) -> str:
     """
     Constrói system instruction otimizado para RAG multi-documento e Output Format controlado.
@@ -87,6 +88,7 @@ def build_system_instruction(
         current_time: Data/hora atual
         available_docs: Lista de nomes de documentos disponíveis (ordenados por recência)
         allow_web_search: Se True, injeta instruções específicas para uso da Google Search
+        strict_context: Se True, a IA deve responder APENAS com base nas fontes.
     """
     
     # Lista de documentos disponíveis

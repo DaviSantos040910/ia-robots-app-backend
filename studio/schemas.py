@@ -1,63 +1,64 @@
 # studio/schemas.py
 
-from google.genai import types
+# Definindo esquemas como dicionários puros (JSON Schema) para evitar
+# conflitos de versão ou namespace com o SDK google.genai (types.Type).
+# O SDK aceita dicionários crus para response_schema.
 
 # Esquema para Quiz
-# {"type": "array", "items": {...}}
-QUIZ_SCHEMA = types.Schema(
-    type=types.Type.ARRAY,
-    items=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "question": types.Schema(type=types.Type.STRING),
-            "options": types.Schema(
-                type=types.Type.ARRAY,
-                items=types.Schema(type=types.Type.STRING)
-            ),
-            "correctAnswerIndex": types.Schema(type=types.Type.INTEGER)
+QUIZ_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "question": {"type": "STRING"},
+            "options": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"}
+            },
+            "correctAnswerIndex": {"type": "INTEGER"}
         },
-        required=["question", "options", "correctAnswerIndex"]
-    )
-)
+        "required": ["question", "options", "correctAnswerIndex"]
+    }
+}
 
 # Esquema para Flashcards
-FLASHCARD_SCHEMA = types.Schema(
-    type=types.Type.ARRAY,
-    items=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "front": types.Schema(type=types.Type.STRING),
-            "back": types.Schema(type=types.Type.STRING)
+FLASHCARD_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "front": {"type": "STRING"},
+            "back": {"type": "STRING"}
         },
-        required=["front", "back"]
-    )
-)
+        "required": ["front", "back"]
+    }
+}
 
 # Esquema para Resumo
-SUMMARY_SCHEMA = types.Schema(
-    type=types.Type.OBJECT,
-    properties={
-        "summary": types.Schema(type=types.Type.STRING),
-        "key_points": types.Schema(
-            type=types.Type.ARRAY,
-            items=types.Schema(type=types.Type.STRING)
-        )
+SUMMARY_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "summary": {"type": "STRING"},
+        "key_points": {
+            "type": "ARRAY",
+            "items": {"type": "STRING"}
+        }
     },
-    required=["summary"]
-)
+    "required": ["summary"]
+}
 
-# Esquema para Slides (Adicional para completude, embora não explicitamente pedido, é útil dado o código existente)
-SLIDE_SCHEMA = types.Schema(
-    type=types.Type.ARRAY,
-    items=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "title": types.Schema(type=types.Type.STRING),
-            "bullets": types.Schema(
-                type=types.Type.ARRAY,
-                items=types.Schema(type=types.Type.STRING)
-            )
+# Esquema para Slides
+SLIDE_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "title": {"type": "STRING"},
+            "bullets": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"}
+            }
         },
-        required=["title", "bullets"]
-    )
-)
+        "required": ["title", "bullets"]
+    }
+}

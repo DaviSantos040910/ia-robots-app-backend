@@ -35,6 +35,7 @@ from .serializers import (
     ChatMessageAttachmentSerializer
 )
 from bots.models import Bot
+from studio.models import KnowledgeSource
 from .services import (
     get_ai_response,
     transcribe_audio_gemini,
@@ -43,7 +44,7 @@ from .services import (
     handle_voice_message,
     process_message_stream
 )
-from myproject.pagination import StandardMessagePagination
+from config.pagination import StandardMessagePagination
 from .vector_service import vector_service
 from .file_processor import FileProcessor
 
@@ -116,7 +117,9 @@ class ChatBootstrapView(APIView):
             "bot": {
                 "name": bot.name,
                 "handle": f"@{bot.owner.username}",
-                "avatarUrl": avatar_url_path
+                "avatarUrl": avatar_url_path,
+                "avatar_url": avatar_url_path, # Legacy/Consistency alias
+                "createdByMe": bot.owner == request.user # Informa ao frontend se sou o dono
             },
             "welcome": bot.description or "Hello! How can I help you today?",
             "suggestions": [s for s in [bot.suggestion1, bot.suggestion2, bot.suggestion3] if s]
@@ -538,8 +541,11 @@ class SetActiveChatView(APIView):
         )
 
 
-class MessageLikeToggleView(APIView):
-    """Toggle de like em uma mensagem."""
+class MessageFeedbackView(APIView):
+    """
+    Atualiza o feedback de uma mensagem (like/dislike/null).
+    Substitui o antigo MessageLikeToggleView.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, chat_pk, message_id):
@@ -549,9 +555,87 @@ class MessageLikeToggleView(APIView):
             chat_id=chat_pk,
             chat__user=request.user
         )
-        m.liked = not m.liked
+        
+        feedback = request.data.get('feedback')
+        if feedback not in ['like', 'dislike', None]:
+            return Response({'detail': 'Invalid feedback value. Use "like", "dislike" or null.'}, status=400)
+            
+        m.feedback = feedback
         m.save()
-        return Response({'liked': m.liked}, status=200)
+        
+        return Response({'feedback': m.feedback}, status=200)
+
+
+class RegenerateMessageView(APIView):
+    """
+    Regera a última resposta do assistente.
+    Apaga as mensagens do assistente que seguiram a última mensagem do usuário
+    e gera uma nova resposta.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, chat_pk):
+        chat = get_object_or_404(Chat, id=chat_pk, user=request.user)
+        
+        # Encontra a última mensagem do usuário
+        last_user_msg = chat.messages.filter(role=ChatMessage.Role.USER).order_by('-created_at').first()
+        
+        if not last_user_msg:
+             return Response({"detail": "No user message to reply to."}, status=400)
+             
+        # Apaga todas as mensagens que vieram DEPOIS dessa mensagem do usuário (normalmente a resposta antiga)
+        # Isso garante que limpamos a resposta anterior antes de gerar a nova.
+        chat.messages.filter(created_at__gt=last_user_msg.created_at).delete()
+        
+        # Gera nova resposta (reusando a lógica de get_ai_response)
+        # Nota: reply_with_audio defaults to False here for simplicity, or we could pass it from request
+        reply_with_audio = request.data.get('reply_with_audio', False)
+        
+        ai_response_data = get_ai_response(
+            chat.id,
+            last_user_msg.content,
+            user_message_obj=last_user_msg,
+            reply_with_audio=reply_with_audio
+        )
+        
+        # ... (Logica de salvar a resposta similar ao ChatMessageListView.create)
+        # Para evitar duplicação, o ideal seria refatorar a lógica de salvamento em um service,
+        # mas por brevidade vou replicar a parte essencial aqui ou chamar o service se existir.
+        
+        ai_content = ai_response_data.get('content')
+        ai_suggestions = ai_response_data.get('suggestions', [])
+        # Ignore audio generation for regenerate for now unless strictly needed
+        
+        paragraphs = re.split(r'\\n{2,}', ai_content.strip()) if ai_content else []
+        if not paragraphs:
+            paragraphs = ["..."]
+
+        ai_messages = []
+        total_paragraphs = len(paragraphs)
+        for i, paragraph_content in enumerate(paragraphs):
+            is_last_paragraph = i == (total_paragraphs - 1)
+            suggestions = ai_suggestions if is_last_paragraph else []
+            ai_message = ChatMessage(
+                chat=chat,
+                role=ChatMessage.Role.ASSISTANT,
+                content=paragraph_content,
+                suggestion1=suggestions[0] if len(suggestions) > 0 else None,
+                suggestion2=suggestions[1] if len(suggestions) > 1 else None,
+            )
+            ai_message.save()
+            ai_messages.append(ai_message)
+
+        if ai_messages:
+            chat.last_message_at = ai_messages[-1].created_at
+            chat.save()
+            
+        response_serializer = ChatMessageSerializer(
+            ai_messages,
+            many=True,
+            context={'request': request}
+        )
+        
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
 # =============================================================================
@@ -606,28 +690,145 @@ class MessageTTSView(APIView):
 # VIEWS DE CONTEXTO E FONTES (NOVO)
 # =============================================================================
 
+class ChatSourceView(APIView):
+    """
+    Manage sources specific to a chat.
+    POST: Upload/Link a source.
+    DELETE: Remove a source.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def post(self, request, chat_id):
+        chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+        
+        # 1. Create KnowledgeSource
+        title = request.data.get('title', 'Chat Upload')
+        source_type = request.data.get('source_type', 'FILE')
+        
+        source = KnowledgeSource(
+            user=request.user,
+            title=title,
+            source_type=source_type
+        )
+        
+        if source_type == 'FILE' and request.FILES.get('file'):
+            source.file = request.FILES['file']
+        elif source_type in ['URL', 'YOUTUBE']:
+            source.url = request.data.get('url')
+            
+        source.save()
+        
+        # 2. Extract Text (Sync for now, or reuse logic)
+        try:
+            extracted_text = ""
+            if source.source_type == 'FILE' and source.file:
+                extracted_text = FileProcessor.extract_text(source.file.path)
+            elif source.url:
+                # Assuming ContentExtractor is available or similar logic
+                from chat.services.content_extractor import ContentExtractor
+                extracted_text = ContentExtractor.extract_from_url(source.url)
+            
+            if extracted_text:
+                source.extracted_text = extracted_text
+                source.save()
+                
+                # 3. Index in Vector DB
+                chunks = FileProcessor.chunk_text(extracted_text)
+                if chunks:
+                    vector_service.add_document_chunks(
+                        user_id=request.user.id,
+                        bot_id=chat.bot.id,
+                        chunks=chunks,
+                        source_name=source.title
+                    )
+        except Exception as e:
+            logger.error(f"Error processing chat source: {e}")
+
+        # 4. Link to Chat
+        chat.sources.add(source)
+        
+        return Response({
+            'id': source.id,
+            'title': source.title,
+            'source_type': source.source_type,
+            'created_at': source.created_at
+        }, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, chat_id, source_id):
+        chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+        source = get_object_or_404(KnowledgeSource, id=source_id, user=request.user)
+        
+        if source in chat.sources.all():
+            chat.sources.remove(source)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+
 class ContextSourcesView(APIView):
     """
     Retorna a lista de fontes disponíveis para um chat (documentos indexados).
+    Inclui fontes da KB do bot e fontes específicas do chat.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id, user=request.user)
         
-        # Busca documentos disponíveis via VectorService (que já filtra por user/bot)
-        docs = vector_service.get_available_documents(request.user.id, chat.bot.id)
-        
-        # Mapeia para o formato esperado pelo frontend
-        # Assumindo que 'source' é o nome do arquivo, usamos ele como ID e Name
-        sources = [
-            {
-                'id': doc['source'],
-                'name': doc['source'],
-                'type': 'kb' if doc.get('type') == 'knowledge_base' else 'file', # Exemplo, vector_service retorna 'document'
-                'selected': False
-            } 
-            for doc in docs
-        ]
-        
-        return Response(sources, status=200)
+        sources_list = []
+        seen_ids = set()
+
+        # Helper para formatar
+        def add_source(s, origin_type, prefix):
+            # Use prefixed ID to prevent collision between ChatMessage (source) and KnowledgeSource
+            # Actually Chat.sources links to KnowledgeSource model now?
+            # Wait. Chat.sources is ManyToMany to KnowledgeSource.
+            # StudySpace.sources is ManyToMany to KnowledgeSource.
+            # THEY ARE THE SAME MODEL.
+            # KnowledgeSource IDs are unique across the table.
+            # So collisions are NOT possible between a chat source and a space source because they are the same entity type.
+            # BUT, SourceAssemblyService currently looks at ChatMessage.
+            # Does Chat.sources link to ChatMessage or KnowledgeSource?
+            # backend/chat/models.py: sources = models.ManyToManyField('studio.KnowledgeSource', ...)
+            # So they ARE KnowledgeSource.
+            
+            # HOWEVER, SourceAssemblyService (read in previous step) looks at ChatMessage.objects.filter(id__in=source_ids).
+            # This is WRONG if the sources are KnowledgeSource objects.
+            # Previously, "sources" were file attachments on messages.
+            # Now, we have a distinct KnowledgeSource model.
+            # The SourceAssemblyService must be updated to look at KnowledgeSource model, NOT ChatMessage (or both if we support legacy).
+            
+            # Legacy support: Messages with attachments.
+            # New support: KnowledgeSource objects.
+            
+            # Let's verify what `ContextSourcesView` returns. 
+            # It iterates `chat.sources.all()` -> These are KnowledgeSource.
+            # It iterates `space.sources.all()` -> These are KnowledgeSource.
+            # So the IDs are consistent (KnowledgeSource IDs).
+            
+            # The PROBLEM is SourceAssemblyService is querying ChatMessage with these IDs.
+            # I need to update SourceAssemblyService to query KnowledgeSource.
+            
+            if s.id in seen_ids: return
+            seen_ids.add(s.id)
+            sources_list.append({
+                'id': s.id,
+                'title': s.title,
+                'type': origin_type, # 'chat_source' ou 'space_source'
+                'source_type': s.source_type,
+                'url': s.url or (s.file.url if s.file else None),
+                'created_at': s.created_at,
+                'selected': True
+            })
+
+        # 1. Fontes Específicas do Chat
+        for s in chat.sources.all():
+            add_source(s, 'chat_source', '')
+
+        # 2. Fontes dos Espaços de Estudo vinculados ao Bot
+        if chat.bot:
+            for space in chat.bot.study_spaces.all():
+                for s in space.sources.all():
+                    add_source(s, 'space_source', '')
+            
+        return Response(sources_list, status=200)

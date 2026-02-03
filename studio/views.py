@@ -2,7 +2,7 @@ import io
 import json
 import logging
 import threading
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, parsers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.http import HttpResponse
@@ -23,8 +23,8 @@ from studio.services.podcast_scripting import PodcastScriptingService
 from studio.services.audio_mixer import AudioMixerService
 from studio.schemas import QUIZ_SCHEMA, FLASHCARD_SCHEMA, SUMMARY_SCHEMA, SLIDE_SCHEMA
 
-from .models import KnowledgeArtifact, KnowledgeSource
-from .serializers import KnowledgeArtifactSerializer, KnowledgeSourceSerializer
+from .models import KnowledgeArtifact, KnowledgeSource, StudySpace
+from .serializers import KnowledgeArtifactSerializer, KnowledgeSourceSerializer, StudySpaceSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,116 @@ class KnowledgeSourceViewSet(viewsets.ModelViewSet):
             logger.error(f"Error adding source to chat: {e}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class StudySpaceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for managing Study Spaces.
+    """
+    queryset = StudySpace.objects.all()
+    serializer_class = StudySpaceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def get_queryset(self):
+        return StudySpace.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def link_bot(self, request, pk=None):
+        space = self.get_object()
+        bot_id = request.data.get('bot_id')
+        if not bot_id:
+            return Response({"error": "bot_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Assuming Bot model is imported from bots.models
+        from bots.models import Bot
+        try:
+            bot = Bot.objects.get(id=bot_id)
+            # Check ownership if necessary, e.g., bot.owner == request.user
+            # space.bots.add(bot) - depends on relation direction
+            # Bot has `study_spaces = ManyToManyField(..., related_name='bots')`
+            bot.study_spaces.add(space)
+            return Response({"status": "linked"}, status=status.HTTP_200_OK)
+        except Bot.DoesNotExist:
+            return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['post'])
+    def unlink_bot(self, request, pk=None):
+        space = self.get_object()
+        bot_id = request.data.get('bot_id')
+        if not bot_id:
+            return Response({"error": "bot_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from bots.models import Bot
+        try:
+            bot = Bot.objects.get(id=bot_id)
+            bot.study_spaces.remove(space)
+            return Response({"status": "unlinked"}, status=status.HTTP_200_OK)
+        except Bot.DoesNotExist:
+            return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['post'], parser_classes=[parsers.MultiPartParser, parsers.FormParser])
+    def add_source(self, request, pk=None):
+        """
+        Create and link a KnowledgeSource to this Study Space.
+        """
+        space = self.get_object()
+        
+        # 1. Create KnowledgeSource
+        title = request.data.get('title', 'Space Upload')
+        source_type = request.data.get('source_type', 'FILE')
+        
+        # Map frontend type to backend choices if needed
+        # KnowledgeSource.SourceType: FILE, URL, YOUTUBE, TEXT
+        
+        source = KnowledgeSource(
+            user=request.user,
+            title=title,
+            source_type=source_type
+        )
+        
+        if source_type == 'FILE' and request.FILES.get('file'):
+            source.file = request.FILES['file']
+        elif source_type in ['URL', 'YOUTUBE']:
+            source.url = request.data.get('url')
+            if not request.data.get('title'):
+                source.title = source.url
+        
+        source.save()
+        
+        # 2. Extract Text (Reuse logic from KnowledgeSourceViewSet.perform_create)
+        try:
+            extracted_text = ""
+            if source.source_type == KnowledgeSource.SourceType.FILE and source.file:
+                extracted_text = FileProcessor.extract_text(source.file.path)
+            elif source.source_type in [KnowledgeSource.SourceType.URL, KnowledgeSource.SourceType.YOUTUBE] and source.url:
+                extracted_text = ContentExtractor.extract_from_url(source.url)
+
+            if extracted_text:
+                source.extracted_text = extracted_text
+                source.save(update_fields=['extracted_text'])
+        except Exception as e:
+            logger.error(f"Error extracting text for Study Space source: {e}")
+
+        # 3. Link to Space
+        space.sources.add(source)
+        
+        return Response(KnowledgeSourceSerializer(source).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def remove_source(self, request, pk=None):
+        space = self.get_object()
+        source_id = request.data.get('source_id')
+        if not source_id:
+            return Response({"error": "source_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            source = KnowledgeSource.objects.get(id=source_id, user=request.user)
+            space.sources.remove(source)
+            return Response({"status": "removed"}, status=status.HTTP_200_OK)
+        except KnowledgeSource.DoesNotExist:
+            return Response({"error": "Source not found"}, status=status.HTTP_404_NOT_FOUND)
 
 class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
     """

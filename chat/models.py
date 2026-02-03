@@ -33,6 +33,9 @@ class Chat(models.Model):
     # --- NEW: Timestamp for ordering the chat list ---
     last_message_at = models.DateTimeField(auto_now_add=True)
     
+    # Context Sources directly linked to this chat
+    sources = models.ManyToManyField('studio.KnowledgeSource', blank=True, related_name='chats')
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -80,7 +83,17 @@ class ChatMessage(models.Model):
     # --------------------
     suggestion1 = models.CharField(max_length=128, null=True, blank=True, help_text="First follow-up suggestion.")
     suggestion2 = models.CharField(max_length=128, null=True, blank=True, help_text="Second follow-up suggestion.")
-    liked = models.BooleanField(default=False)
+    
+    FEEDBACK_CHOICES = [
+        ('like', 'Like'),
+        ('dislike', 'Dislike'),
+    ]
+    feedback = models.CharField(
+        max_length=10, 
+        choices=FEEDBACK_CHOICES, 
+        null=True, 
+        blank=True
+    )
 
     # -----------------------
     def __str__(self):

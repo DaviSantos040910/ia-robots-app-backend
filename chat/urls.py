@@ -1,21 +1,22 @@
 # chat/urls.py
 from django.urls import path
 from .views import (
-    ActiveChatListView, # Renamed from ChatListCreateView
+    ActiveChatListView,
     ChatMessageListView, 
     AudioTranscriptionView,
     ChatBootstrapView,
-    ArchiveChatView,      # New import
-    ArchivedChatListView, # New import
+    ArchiveChatView,
+    ArchivedChatListView,
     SetActiveChatView,
     ChatMessageAttachmentView,
     MessageTTSView,
-    MessageLikeToggleView,
+    MessageFeedbackView, # Updated
+    RegenerateMessageView, # Added
     VoiceInteractionView,
     VoiceMessageView,
     StreamChatMessageView,
-    ContextSourcesView
-
+    ContextSourcesView,
+    ChatSourceView
 )
 
 urlpatterns = [
@@ -33,8 +34,14 @@ urlpatterns = [
     path('bootstrap/bot/<int:bot_id>/', ChatBootstrapView.as_view(), name='chat-bootstrap'),
     path('<int:chat_pk>/messages/', ChatMessageListView.as_view(), name='chat-message-list-create'),
     path('<int:chat_pk>/messages/attach/', ChatMessageAttachmentView.as_view(), name='chat-message-attach'),
-    path('<int:chat_pk>/messages/<str:message_id>/tts/', MessageTTSView.as_view(), name='message-tts'),
-    path('<int:chat_pk>/messages/<str:message_id>/like/', MessageLikeToggleView.as_view(), name='message-like'),
+    path('<int:chat_pk>/messages/<int:message_id>/tts/', MessageTTSView.as_view(), name='message-tts'),
+    
+    # Updated: Feedback endpoint (replaces like)
+    path('<int:chat_pk>/messages/<int:message_id>/feedback/', MessageFeedbackView.as_view(), name='message-feedback'),
+    
+    # Added: Regenerate endpoint
+    path('<int:chat_pk>/regenerate/', RegenerateMessageView.as_view(), name='chat-regenerate'),
+
     path('<int:chat_pk>/transcribe/', AudioTranscriptionView.as_view(), name='audio-transcription'),
     path('<int:chat_pk>/voice/', VoiceInteractionView.as_view(), name='chat-voice'),
     path('<int:chat_pk>/voice-message/', VoiceMessageView.as_view(), name='chat-voice-message'),
@@ -42,5 +49,7 @@ urlpatterns = [
 
     # Context Sources - Nested under chat ID
     path('<int:chat_id>/context-sources/', ContextSourcesView.as_view(), name='context-sources'),
+    path('<int:chat_id>/sources/', ChatSourceView.as_view(), name='chat-source-list-create'),
+    path('<int:chat_id>/sources/<int:source_id>/', ChatSourceView.as_view(), name='chat-source-delete'),
 
 ]

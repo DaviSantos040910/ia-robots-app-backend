@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from .models import Bot, Category
 from .serializers import BotSerializer, CategorySerializer
-from myproject.permissions import IsAdminUser
+from config.permissions import IsAdminUser
 
 User = get_user_model()
 

@@ -1,9 +1,6 @@
-# accounts/urls.py
 from django.urls import path
-from .views import RegisterView, VerifyEmailView, ResendVerificationView, LoginView, MeView, ForgotPasswordView,ResetPasswordView
-# views.py
-from django_ratelimit.decorators import ratelimit  # ao invés de 'ratelimit.decorators'
-
+from .views import RegisterView, VerifyEmailView, ResendVerificationView, LoginView, MeView, ChangePasswordView, ForgotPasswordView, ResetPasswordView
+from django_ratelimit.decorators import ratelimit
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
@@ -11,7 +8,8 @@ urlpatterns = [
     path("resend-verification/", ResendVerificationView.as_view(), name="resend-verification"),
     path("login/", LoginView.as_view(), name="login"),
     path("me/", MeView.as_view(), name="me"),
-      # Password reset URLs
+    path("change_password/", ChangePasswordView.as_view(), name="change_password"),
+    # Password reset URLs
     path("forgot-password/", ForgotPasswordView.as_view(), name="forgot-password"),
     path("reset-password/", ResetPasswordView.as_view(), name="reset-password"),
 ]

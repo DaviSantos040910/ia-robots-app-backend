@@ -1,5 +1,14 @@
 from rest_framework import serializers
-from .models import KnowledgeArtifact, KnowledgeSource
+from .models import KnowledgeArtifact, KnowledgeSource, StudySpace
+
+class MultipartListField(serializers.ListField):
+    """
+    Custom ListField that handles QueryDict (FormData) correctly by using getlist.
+    """
+    def get_value(self, dictionary):
+        if hasattr(dictionary, 'getlist'):
+            return dictionary.getlist(self.field_name, [])
+        return dictionary.get(self.field_name, [])
 
 class KnowledgeArtifactSerializer(serializers.ModelSerializer):
     # Write-only configuration fields
@@ -124,3 +133,53 @@ class KnowledgeSourceSerializer(serializers.ModelSerializer):
             'file': {'required': False, 'allow_null': True},
             'url': {'required': False, 'allow_null': True}
         }
+
+class StudySpaceSerializer(serializers.ModelSerializer):
+    sources = KnowledgeSourceSerializer(many=True, read_only=True)
+    source_ids = MultipartListField(
+        child=serializers.IntegerField(), write_only=True, required=False
+    )
+    bot_ids = MultipartListField(
+        child=serializers.IntegerField(), write_only=True, required=False
+    )
+    bots = serializers.SerializerMethodField()
+    cover_image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = StudySpace
+        fields = ['id', 'title', 'description', 'cover_image', 'sources', 'source_ids', 'bot_ids', 'bots', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        source_ids = validated_data.pop('source_ids', [])
+        bot_ids = validated_data.pop('bot_ids', [])
+        
+        space = super().create(validated_data)
+        
+        if source_ids:
+            space.sources.set(source_ids)
+        if bot_ids:
+            from bots.models import Bot
+            bots = Bot.objects.filter(id__in=bot_ids)
+            space.bots.set(bots)
+            
+        return space
+
+    def update(self, instance, validated_data):
+        source_ids = validated_data.pop('source_ids', None)
+        bot_ids = validated_data.pop('bot_ids', None)
+        
+        instance = super().update(instance, validated_data)
+        
+        if source_ids is not None:
+            instance.sources.set(source_ids)
+        if bot_ids is not None:
+            from bots.models import Bot
+            bots = Bot.objects.filter(id__in=bot_ids)
+            instance.bots.set(bots)
+            
+        return instance
+
+    def get_bots(self, obj):
+        # Return simplified bot objects attached to this space
+        return list(obj.bots.values('id', 'name', 'avatar_url'))
