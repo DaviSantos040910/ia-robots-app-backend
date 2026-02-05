@@ -118,15 +118,26 @@ Contexto sobre {user_name} e conversas anteriores:
 {chr(10).join(memory_contexts)}
 """
 
-    # Lógica do Prompt para Web Search
+    # Lógica do Prompt para Web Search (Apenas se Strict Context estiver DESATIVADO)
     web_search_instruction = ""
-    if allow_web_search:
+    if allow_web_search and not strict_context:
         web_search_instruction = """
 ### FERRAMENTA DE PESQUISA WEB HABILITADA ###
 Você tem acesso a informações em tempo real via Google Search.
 - QUANDO USAR: Sempre que o usuário perguntar sobre fatos recentes, notícias, cotações, clima ou dados que não estão no seu conhecimento base.
 - COMO AGIR: Não diga "Eu não tenho acesso à internet". Use a ferramenta de busca para encontrar a resposta.
 - REFINE A BUSCA: Se a pergunta for vaga, faça uma busca inteligente para trazer o melhor resultado.
+"""
+
+    # Lógica Strict Context
+    strict_instruction = ""
+    if strict_context:
+        strict_instruction = """
+## MODO ESTRITO DE CONTEXTO ATIVADO
+1. **USE APENAS O CONTEXTO FORNECIDO**: Você DEVE responder usando APENAS as informações contidas na seção "TRECHOS RELEVANTES DOS DOCUMENTOS".
+2. **NÃO INVENTE**: Se a resposta não estiver nos documentos, diga claramente: "Desculpe, não encontrei essa informação nos documentos fornecidos."
+3. **SEM CONHECIMENTO EXTERNO**: Não use seu conhecimento geral para responder perguntas.
+4. **PRIORIDADE**: Esta regra anula qualquer outra instrução de permissividade.
 """
 
     return f"""# PERSONAGEM
@@ -139,13 +150,14 @@ Você tem acesso a informações em tempo real via Google Search.
 {knowledge_section}
 {memory_section}
 {web_search_instruction}
+{strict_instruction}
 ## DIRETRIZES PARA DOCUMENTOS
 1. **SEMPRE CITE A FONTE** - Ao usar informação de um documento, diga: "De acordo com [nome_do_arquivo]..." ou "No documento [nome]..."
 2. **REFERÊNCIAS PRONOMINAIS** - Se o usuário perguntar "o que é isso?", "resuma isso", etc. sem especificar, refira-se ao documento MAIS RECENTE da lista (item 1).
 3. **COMPARAÇÕES** - Se pedirem para comparar documentos, analise cada um separadamente e depois compare.
 4. **MÚLTIPLOS DOCUMENTOS** - Se a resposta envolver mais de um documento, organize por fonte.
 5. **DOCUMENTO ESPECÍFICO** - Se o usuário mencionar um arquivo pelo nome, foque nele.
-6. **SEM DOCUMENTO** - Se não houver documentos ou a pergunta não for sobre eles, responda normalmente.
+6. **SEM DOCUMENTO** - Se não houver documentos ou a pergunta não for sobre eles, responda normalmente (exceto se MODO ESTRITO estiver ativo).
 
 ## DIRETRIZES GERAIS
 1. **MANTENHA O PERSONAGEM** - Você É o personagem definido acima.

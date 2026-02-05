@@ -175,6 +175,18 @@ def get_ai_response(
             query=user_message_text, user_id=chat.user_id, bot_id=bot.id, chat_id=chat_id
         )
 
+        # Observability Log
+        logger.info(f"[Context] Available Docs: {available_doc_names}")
+        if doc_contexts:
+            sources_used = set()
+            for c in doc_contexts:
+                if "[DOCUMENTO: " in c:
+                    try:
+                        src = c.split("[DOCUMENTO: ")[1].split(" (trecho")[0]
+                        sources_used.add(src)
+                    except: pass
+            logger.info(f"[Context] Sources Included in Prompt ({len(doc_contexts)} chunks): {list(sources_used)}")
+
         system_instruction = build_system_instruction(
             bot_prompt=user_defined_prompt,
             user_name=user_name,
@@ -192,8 +204,8 @@ def get_ai_response(
             system_instruction=system_instruction
         )
 
-        # Adiciona ferramenta Google Search na configuração síncrona
-        if allow_web_search:
+        # Adiciona ferramenta Google Search na configuração síncrona (Apenas se Strict Context estiver OFF)
+        if allow_web_search and not strict_context:
             # Se config.tools já existe, adiciona. Se não, cria.
             if hasattr(generation_config, 'tools') and generation_config.tools:
                 generation_config.tools.append(types.Tool(google_search=types.GoogleSearch()))
@@ -284,6 +296,18 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             query=user_message_text, user_id=chat.user_id, bot_id=bot.id, chat_id=chat_id
         )
 
+        # Observability Log
+        logger.info(f"[Context Stream] Available Docs: {available_docs}")
+        if doc_contexts:
+            sources_used = set()
+            for c in doc_contexts:
+                if "[DOCUMENTO: " in c:
+                    try:
+                        src = c.split("[DOCUMENTO: ")[1].split(" (trecho")[0]
+                        sources_used.add(src)
+                    except: pass
+            logger.info(f"[Context Stream] Sources Included in Prompt ({len(doc_contexts)} chunks): {list(sources_used)}")
+
         system_instruction = build_system_instruction(
             bot_prompt=user_defined_prompt,
             user_name=user_name,
@@ -304,13 +328,16 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
         contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
-        logger.info(f"[Stream] Iniciando geração para chat {chat_id} | Web Search: {allow_web_search}")
+        logger.info(f"[Stream] Iniciando geração para chat {chat_id} | Web Search: {allow_web_search} | Strict: {strict_context}")
         
         # --- Passa flag para o client de IA (habilita tool) ---
+        # Só habilita busca se não estiver em modo estrito
+        use_search = allow_web_search and not strict_context
+        
         stream = generate_content_stream(
             contents, 
             config, 
-            use_google_search=allow_web_search 
+            use_google_search=use_search
         )
 
         # --- Loop do Stream com Interceptação ---

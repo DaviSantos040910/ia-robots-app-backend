@@ -236,7 +236,7 @@ class VectorService:
                 where={
                     "$and": [
                         {"user_id": str(user_id)},
-                        {"bot_id": str(bot_id)},
+                        {"bot_id": {"$in": [str(bot_id), "0"]}},
                         {"type": "document"}
                     ]
                 },
@@ -368,7 +368,7 @@ class VectorService:
             where={
                 "$and": [
                     {"user_id": str(user_id)},
-                    {"bot_id": str(bot_id)},
+                    {"bot_id": {"$in": [str(bot_id), "0"]}},
                     {"type": "document"},
                     {"source": source}
                 ]
@@ -398,7 +398,7 @@ class VectorService:
                 where={
                     "$and": [
                         {"user_id": str(user_id)},
-                        {"bot_id": str(bot_id)},
+                        {"bot_id": {"$in": [str(bot_id), "0"]}},
                         {"type": "document"},
                         {"source": source}
                     ]
@@ -411,7 +411,7 @@ class VectorService:
     def _search_general(
         self, query: str, user_id: int, bot_id: int, limit: int, allowed_sources: Optional[List[str]] = None
     ) -> List[str]:
-        """Busca geral em todos os documentos, rankeado por relevância, com filtro opcional."""
+        """Busca geral com diversificação de fontes (Reranking simples)."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
             return []
@@ -419,7 +419,7 @@ class VectorService:
         where_clause = {
             "$and": [
                 {"user_id": str(user_id)},
-                {"bot_id": str(bot_id)},
+                {"bot_id": {"$in": [str(bot_id), "0"]}},
                 {"type": "document"}
             ]
         }

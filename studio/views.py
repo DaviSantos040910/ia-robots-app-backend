@@ -16,6 +16,7 @@ from google.genai import types
 
 from chat.models import Chat, ChatMessage
 from chat.file_processor import FileProcessor
+from chat.vector_service import vector_service
 from chat.services.content_extractor import ContentExtractor
 from chat.services.ai_client import get_ai_client, get_model
 from studio.services.source_assembler import SourceAssemblyService
@@ -54,6 +55,18 @@ class KnowledgeSourceViewSet(viewsets.ModelViewSet):
             if extracted_text:
                 instance.extracted_text = extracted_text
                 instance.save(update_fields=['extracted_text'])
+                
+                # Index globally for the user (bot_id=0)
+                try:
+                    chunks = FileProcessor.chunk_text(extracted_text)
+                    vector_service.add_document_chunks(
+                        user_id=instance.user.id,
+                        bot_id=0,
+                        chunks=chunks,
+                        source_name=instance.title
+                    )
+                except Exception as vec_err:
+                    logger.error(f"Error indexing source {instance.id}: {vec_err}")
 
         except Exception as e:
             logger.error(f"Error extracting text for KnowledgeSource {instance.id}: {e}")
@@ -217,6 +230,19 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
             if extracted_text:
                 source.extracted_text = extracted_text
                 source.save(update_fields=['extracted_text'])
+                
+                # Index globally for the user (bot_id=0)
+                try:
+                    chunks = FileProcessor.chunk_text(extracted_text)
+                    vector_service.add_document_chunks(
+                        user_id=source.user.id,
+                        bot_id=0,
+                        chunks=chunks,
+                        source_name=source.title
+                    )
+                except Exception as vec_err:
+                    logger.error(f"Error indexing source {source.id}: {vec_err}")
+
         except Exception as e:
             logger.error(f"Error extracting text for Study Space source: {e}")
 
@@ -278,7 +304,8 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             'difficulty': request_config.get('difficulty') or serializer.validated_data.get('difficulty'),
             'source_ids': request_config.get('selectedSourceIds') or serializer.validated_data.get('source_ids'),
             'custom_instructions': request_config.get('customInstructions') or serializer.validated_data.get('custom_instructions'),
-            'target_duration': request_config.get('duration') or serializer.validated_data.get('duration')
+            'target_duration': request_config.get('duration') or serializer.validated_data.get('duration'),
+            'includeChatHistory': request_config.get('includeChatHistory', False)
         }
 
         # Generate Real Content via AI (Async)
@@ -306,7 +333,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             # 1. Retrieve Context using SourceAssemblyService
             config = {
                 'selectedSourceIds': options.get('source_ids', []),
-                # 'includeChatContext': Removed per audit requirement
+                'includeChatHistory': options.get('includeChatHistory', False)
             }
             full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
 
