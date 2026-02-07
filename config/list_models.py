@@ -14,10 +14,10 @@ if not api_key:
 else:
     # Criar o cliente com a chave de API
     client = genai.Client(api_key=api_key)
-    
+
     print("A procurar por modelos disponíveis para a sua chave de API...")
     print("-" * 30)
-    
+
     try:
         # Listar todos os modelos que suportam o método 'generateContent'
         print("Modelos que suportam generateContent:\n")
@@ -28,7 +28,7 @@ else:
                     if action == "generateContent":
                         print(f"{m.name}")
                         break
-        
+
         print("\n" + "-" * 30)
         print("Modelos que suportam embedContent:\n")
         for m in client.models.list():
@@ -38,7 +38,7 @@ else:
                     if action == "embedContent":
                         print(f"{m.name}")
                         break
-                        
+
     except Exception as e:
         print(f"Ocorreu um erro ao contactar a API da Google: {e}")
 

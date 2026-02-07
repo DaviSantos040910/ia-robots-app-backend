@@ -26,7 +26,7 @@ class ImageGenerationService:
     - Gemini API: usa gemini-2.5-flash-image (generate_content)
     - Vertex AI: usa imagen-3.0-generate-002 (generate_images)
     """
-    
+
     def __init__(self):
         self.client = get_ai_client()
 
@@ -52,16 +52,16 @@ class ImageGenerationService:
         """
         try:
             logger.info(f"[ImageGen] Gerando imagem: {prompt[:80]}...")
-            
+
             # Escolhe o método baseado na API configurada
             if USE_VERTEX_AI:
                 image_bytes = self._generate_with_imagen(prompt, aspect_ratio)
             else:
                 image_bytes = self._generate_with_gemini(prompt)
-            
+
             # Salvar no disco
             return self._save_image(image_bytes, output_dir)
-            
+
         except ImageGenerationError:
             raise
         except Exception as e:
@@ -73,7 +73,7 @@ class ImageGenerationService:
         """
         model = get_model('image')
         logger.info(f"[ImageGen] Usando modelo Gemini: {model}")
-        
+
         full_prompt = f"""Generate a high-quality image based on this description:
 
 {prompt}
@@ -103,7 +103,7 @@ Create a visually appealing, detailed image that accurately represents the descr
                     return inline_data.data
                 elif hasattr(inline_data, '_image_bytes'):
                     return inline_data._image_bytes
-        
+
         raise ImageGenerationError("Resposta sem dados de imagem válidos.")
 
     def _generate_with_imagen(self, prompt: str, aspect_ratio: str) -> bytes:
@@ -113,7 +113,7 @@ Create a visually appealing, detailed image that accurately represents the descr
         """
         model = get_model('image')
         logger.info(f"[ImageGen] Usando modelo Imagen: {model}")
-        
+
         response = self.client.models.generate_images(
             model=model,
             prompt=prompt,
@@ -132,7 +132,7 @@ Create a visually appealing, detailed image that accurately represents the descr
 
         # Extração dos bytes
         generated = response.generated_images[0]
-        
+
         if hasattr(generated, 'image'):
             img = generated.image
             if hasattr(img, 'image_bytes'):
@@ -148,7 +148,7 @@ Create a visually appealing, detailed image that accurately represents the descr
                         data = f.read()
                     os.unlink(tmp.name)
                     return data
-        
+
         raise ImageGenerationError("Formato de resposta do Imagen não reconhecido.")
 
     def _save_image(self, image_bytes: bytes, output_dir: str) -> str:
@@ -169,7 +169,7 @@ Create a visually appealing, detailed image that accurately represents the descr
     def _handle_error(self, error: Exception):
         """Tratamento centralizado de erros."""
         error_msg = str(error).lower()
-        
+
         if 'quota' in error_msg or 'rate' in error_msg:
             raise ImageGenerationError(
                 "Limite de requisições atingido. Aguarde alguns minutos."

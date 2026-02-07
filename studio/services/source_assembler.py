@@ -28,7 +28,7 @@ class SourceAssemblyService:
         """
         context_parts = []
         current_tokens = 0
-        
+
         try:
             chat = Chat.objects.get(id=chat_id)
         except Chat.DoesNotExist:
@@ -39,8 +39,9 @@ class SourceAssemblyService:
         if source_ids and query:
             clean_ids = [str(sid) for sid in source_ids]
             sources = KnowledgeSource.objects.filter(id__in=clean_ids)
-            allowed_names = [s.title for s in sources]
             
+            # Note: allowed_names removed as we filter by ID now
+
             # Garante que os textos foram extraídos/indexados (lazy extraction fallback)
             for source in sources:
                 if not source.extracted_text and source.file:
@@ -51,23 +52,33 @@ class SourceAssemblyService:
                             source.save(update_fields=['extracted_text'])
                             # Index on the fly if needed (idealmente já foi feito no upload)
                             chunks = FileProcessor.chunk_text(content)
-                            vector_service.add_document_chunks(source.user.id, 0, chunks, source.title)
+                            vector_service.add_document_chunks(
+                                user_id=source.user.id,
+                                chunks=chunks,
+                                source_name=source.title,
+                                source_id=source.id,
+                                bot_id=0,
+                                study_space_id=None
+                            )
                     except Exception: pass
 
             # Busca Vetorial Top-K (Limit ~20 chunks)
-            # allowed_sources filtra a busca apenas nos arquivos selecionados
+            # allowed_source_ids filtra a busca apenas nos arquivos selecionados
+            study_space_ids = list(chat.bot.study_spaces.values_list('id', flat=True)) if chat.bot else []
+            
             doc_contexts, _ = vector_service.search_context(
                 query_text=query,
                 user_id=chat.user_id,
                 bot_id=chat.bot.id,
+                study_space_ids=study_space_ids,
                 limit=20,
-                allowed_sources=allowed_names
+                allowed_source_ids=clean_ids # Pass IDs explicitly
             )
-            
+
             if doc_contexts:
                 rag_content = "\n".join(doc_contexts)
                 rag_tokens = TokenService.estimate_tokens(rag_content)
-                
+
                 context_parts.append("## TRECHOS RELEVANTES DOS DOCUMENTOS SELECIONADOS\n")
                 context_parts.append(rag_content)
                 current_tokens += rag_tokens
@@ -76,7 +87,7 @@ class SourceAssemblyService:
 
         # Fallback: Se não houver query (não deve ocorrer em artefatos), mas houver fontes, usa full text limitado?
         # Por enquanto, assumimos que Artifact Generation sempre tem query (title).
-        
+
 
         # 2. Process Chat History (if requested)
         if config.get('includeChatHistory'):
@@ -87,7 +98,7 @@ class SourceAssemblyService:
                 if recent_texts:
                     history_text = "\n".join(recent_texts)
                     hist_tokens = TokenService.estimate_tokens(history_text)
-                    
+
                     if current_tokens + hist_tokens <= SourceAssemblyService.MAX_CONTEXT_TOKENS:
                         context_parts.append(f"\n--- CHAT HISTORY ---\n{history_text}")
                         current_tokens += hist_tokens

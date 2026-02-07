@@ -22,20 +22,20 @@ class Chat(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chats')
     bot = models.ForeignKey(Bot, on_delete=models.CASCADE, related_name='chats')
-    
+
     # --- NEW: Status field to manage active vs. archived conversations ---
     status = models.CharField(
         max_length=10,
         choices=ChatStatus.choices,
         default=ChatStatus.ACTIVE
     )
-    
+
     # --- NEW: Timestamp for ordering the chat list ---
     last_message_at = models.DateTimeField(auto_now_add=True)
-    
+
     # Context Sources directly linked to this chat
     sources = models.ManyToManyField('studio.KnowledgeSource', blank=True, related_name='chats')
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -83,15 +83,15 @@ class ChatMessage(models.Model):
     # --------------------
     suggestion1 = models.CharField(max_length=128, null=True, blank=True, help_text="First follow-up suggestion.")
     suggestion2 = models.CharField(max_length=128, null=True, blank=True, help_text="Second follow-up suggestion.")
-    
+
     FEEDBACK_CHOICES = [
         ('like', 'Like'),
         ('dislike', 'Dislike'),
     ]
     feedback = models.CharField(
-        max_length=10, 
-        choices=FEEDBACK_CHOICES, 
-        null=True, 
+        max_length=10,
+        choices=FEEDBACK_CHOICES,
+        null=True,
         blank=True
     )
 
@@ -119,16 +119,16 @@ class ChatResponseMetric(models.Model):
     Stores metrics about a generated AI response for RAG analysis.
     """
     message = models.OneToOneField(ChatMessage, on_delete=models.CASCADE, related_name='metrics')
-    
+
     # Number of unique source documents available in the context
     sources_count = models.IntegerField(default=0)
-    
+
     # Number of explicit citations found in the response
     cited_count = models.IntegerField(default=0)
-    
+
     # Whether the response contains at least one citation
     has_citation = models.BooleanField(default=False)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

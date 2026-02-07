@@ -23,7 +23,7 @@ class AdminBotDetailView(generics.DestroyAPIView):
     """Admin view to delete any non-private bot."""
     serializer_class = BotSerializer
     permission_classes = [IsAdminUser]
-    
+
     def get_queryset(self):
         return Bot.objects.exclude(publicity=Bot.Publicity.PRIVATE)
 

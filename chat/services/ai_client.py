@@ -49,10 +49,10 @@ def _get_vertex_client():
 def detect_intent(user_message: str) -> str:
     """
     Classifica a intenção do usuário: TEXT ou IMAGE.
-    
+
     Args:
         user_message: Mensagem do usuário para análise
-        
+
     Returns:
         'TEXT' ou 'IMAGE' indicando a intenção detectada
     """
@@ -91,31 +91,31 @@ Responda APENAS: TEXT ou IMAGE"""
 def generate_content_stream(contents, config, model_name=None, use_google_search: bool = False):
     """
     Gera conteúdo em modo streaming usando generate_content_stream().
-    
+
     A biblioteca google-genai possui um método específico para streaming
     que retorna um generator. Cada chunk é um GenerateContentResponse.
-    
+
     Args:
         contents: Conteúdo/histórico da conversa
         config: Configuração de geração (GenerateContentConfig)
         model_name: Nome do modelo (opcional)
         use_google_search: Se True, habilita o Google Search Grounding
-        
+
     Yields:
         Texto de cada chunk conforme gerado pela IA
     """
     try:
         client = get_ai_client()
         model = model_name or get_model('chat')
-        
+
         logger.info(f"[StreamClient] Usando generate_content_stream com modelo {model} | Web Search: {use_google_search}")
-        
+
         # Configuração dinâmica de ferramentas
         tools = []
         if use_google_search:
             # Habilita a busca integrada (Grounding)
             tools.append(types.Tool(google_search=types.GoogleSearch()))
-            
+
         # Atribui a lista de ferramentas (vazia ou com busca) à configuração
         # Isso garante que a busca seja desativada se use_google_search for False
         config.tools = tools
@@ -126,12 +126,12 @@ def generate_content_stream(contents, config, model_name=None, use_google_search
             contents=contents,
             config=config
         )
-        
+
         # O stream é um generator que yields GenerateContentResponse objects
         chunk_count = 0
         for chunk in stream:
             chunk_count += 1
-            
+
             # Cada chunk tem um atributo .text com o texto gerado
             if hasattr(chunk, 'text') and chunk.text:
                 yield chunk.text
@@ -146,9 +146,9 @@ def generate_content_stream(contents, config, model_name=None, use_google_search
                 except (IndexError, AttributeError) as e:
                     # Logs de debug apenas se necessário, chunks de grounding metadata podem vir vazios de texto
                     pass
-        
+
         logger.info(f"[StreamClient] Streaming concluído: {chunk_count} chunks processados")
-        
+
     except Exception as e:
         logger.error(f"[StreamClient] Erro no streaming: {e}", exc_info=True)
         raise
@@ -178,10 +178,10 @@ MODELS = {
 def get_model(model_type: str) -> str:
     """
     Retorna o modelo apropriado baseado no tipo de API configurado.
-    
+
     Args:
         model_type: Tipo do modelo ('chat', 'image', 'embedding', etc.)
-        
+
     Returns:
         Nome do modelo para a API configurada
     """

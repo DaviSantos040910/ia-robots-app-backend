@@ -64,27 +64,27 @@ class BotSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         cat_ids = validated_data.pop('category_ids', [])
         space_ids = validated_data.pop('study_space_ids', [])
-        
+
         bot = super().create(validated_data)
-        
+
         if cat_ids:
             bot.categories.set(cat_ids)
         if space_ids:
             bot.study_spaces.set(space_ids)
-            
+
         return bot
 
     def update(self, instance, validated_data):
         cat_ids = validated_data.pop('category_ids', None)
         space_ids = validated_data.pop('study_space_ids', None)
-        
+
         instance = super().update(instance, validated_data)
-        
+
         if cat_ids is not None:
             instance.categories.set(cat_ids)
         if space_ids is not None:
             instance.study_spaces.set(space_ids)
-            
+
         return instance
 
 
@@ -97,7 +97,7 @@ class BotDetailSerializer(serializers.ModelSerializer):
     createdByMe = serializers.SerializerMethodField()
     settings = serializers.SerializerMethodField()
     handle = serializers.ReadOnlyField(source='owner.username')
-    
+
     avatarUrl = serializers.ImageField(source='avatar_url', read_only=True, use_url=True)
 
     class Meta:
@@ -119,13 +119,13 @@ class BotDetailSerializer(serializers.ModelSerializer):
 
         # 2. Calcular os utilizadores mensais (monthly users)
         thirty_days_ago = timezone.now() - timedelta(days=30)
-        
+
         # Encontra os IDs de utilizadores únicos que enviaram mensagens para este bot nos últimos 30 dias
         monthly_users_count = User.objects.filter(
-            chats__bot=obj, 
+            chats__bot=obj,
             chats__messages__created_at__gte=thirty_days_ago
         ).distinct().count()
-        
+
         return {
             "monthlyUsers": format_number(monthly_users_count),
             "followers": format_number(follower_count)

@@ -13,9 +13,9 @@ def send_verification_email(request, user):
 
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = email_verification_token.make_token(user)
-    
+
     verify_url = f"{request.scheme}://{request.get_host()}/auth/verify-email/?uid={uid}&token={token}"
-    
+
     subject = "Verifique seu e-mail"
     html_content = f"""
     <html>

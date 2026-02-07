@@ -25,10 +25,10 @@ from google.genai import types
 
 from ..models import ChatMessage, Chat, ChatResponseMetric
 from ..vector_service import VectorService
-from .ai_client import get_ai_client, detect_intent, generate_content_stream 
+from .ai_client import get_ai_client, detect_intent, generate_content_stream
 from .image_service import ImageGenerationService
 from .context_builder import (
-    build_conversation_history, 
+    build_conversation_history,
     build_system_instruction,
     get_recent_attachment_context
 )
@@ -51,7 +51,7 @@ def _calculate_metrics(response_text: str, context_sources: list) -> dict:
 
     cited_count = 0
     has_citation = False
-    
+
     # 1. Detectar nomes de arquivos presentes no texto
     # (Simplificado: busca exata ou parcial do nome)
     unique_sources = set(context_sources)
@@ -61,7 +61,7 @@ def _calculate_metrics(response_text: str, context_sources: list) -> dict:
         if src in response_text or base_name in response_text:
             cited_count += 1
             has_citation = True
-            
+
     # 2. Detectar padrões explícitos de citação se nenhum nome encontrado
     if not has_citation:
         citation_patterns = [r'\[DOCUMENTO:', r'De acordo com', r'No documento', r'Segundo o arquivo']
@@ -97,9 +97,9 @@ def _parse_ai_response(response_text: str) -> dict:
     if not response_text:
         result['content'] = "Desculpe, não consegui gerar uma resposta."
         return result
-    
+
     text = response_text.strip()
-    
+
     if "|||SUGGESTIONS|||" in text:
         parts = text.split("|||SUGGESTIONS|||")
         result['content'] = parts[0].strip()
@@ -112,7 +112,7 @@ def _parse_ai_response(response_text: str) -> dict:
                 result['suggestions'] = [str(s) for s in suggestions][:3]
         except Exception as e:
             logger.warning(f"Erro ao parsear sugestões JSON: {e}")
-            
+
     elif text.startswith('{') or text.startswith('```json'):
         try:
             cleaned = re.sub(r'^```\w*', '', text, flags=re.MULTILINE)
@@ -134,7 +134,7 @@ def _parse_ai_response(response_text: str) -> dict:
             result['suggestions'] = [s.strip() for s in sugs[:3] if s.strip()]
     else:
         result['content'] = text
-        
+
     return result
 
 
@@ -215,11 +215,19 @@ def get_ai_response(
         exclude_id = user_message_obj.id if user_message_obj else None
         gemini_history, _ = build_conversation_history(chat_id, limit=12, exclude_message_id=exclude_id)
 
+        # Obter IDs dos espaços de estudo vinculados
+        study_space_ids = list(bot.study_spaces.values_list('id', flat=True))
+
         doc_contexts, memory_contexts, available_doc_names = _get_smart_context(
-            query=user_message_text, user_id=chat.user_id, bot_id=bot.id, chat_id=chat_id
+            query=user_message_text,
+            user_id=chat.user_id,
+            bot_id=bot.id,
+            chat_id=chat_id,
+            study_space_ids=study_space_ids
         )
 
         # Observability Log
+        logger.info(f"[Context] Chat {chat_id} | Bot {bot.id} | Strict: {strict_context} | Web: {allow_web_search}")
         logger.info(f"[Context] Available Docs: {available_doc_names}")
         if doc_contexts:
             sources_used = set()
@@ -286,14 +294,14 @@ def get_ai_response(
         # Metrics Logic
         metrics = _calculate_metrics(result_data['content'], available_doc_names)
         logger.info(f"[Metrics] Msg Response: {metrics}")
-        
-        # Save metrics requires a Message object. 
-        # Since get_ai_response returns dict (and caller creates message later or earlier?), 
+
+        # Save metrics requires a Message object.
+        # Since get_ai_response returns dict (and caller creates message later or earlier?),
         # we can't easily link to message ID here unless passed.
-        # But handle_voice_message DOES create AI message. 
+        # But handle_voice_message DOES create AI message.
         # Wait, get_ai_response is usually called by a view which then saves the message.
         # Ideally, we should return metrics in the result_data so the caller can save them.
-        
+
         result_data['metrics'] = metrics # Pass metrics up
 
         if result_data['content'] and len(user_message_text) > 10:
@@ -324,18 +332,18 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
     Generator que processa a mensagem e envia chunks via SSE.
     Intercepta |||SUGGESTIONS||| para não mostrar ao usuário, fazendo parse do JSON no final.
     """
-    
+
     # Constantes de controle
     SEPARATOR = '|||SUGGESTIONS|||'
     SEPARATOR_LEN = len(SEPARATOR)
     CHUNK_DELAY = 0.03  # Ajustado para typing effect suave
-    
+
     # Variáveis de estado
     buffer = ""
     is_collecting_suggestions = False
     suggestions_json_str = ""
     full_clean_content = ""
-    
+
     try:
         chat = Chat.objects.select_related('bot', 'user').get(id=chat_id, user_id=user_id)
         bot = chat.bot
@@ -352,11 +360,20 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
 
         gemini_history, _ = build_conversation_history(chat_id, limit=10)
+
+        # Obter IDs dos espaços de estudo vinculados
+        study_space_ids = list(bot.study_spaces.values_list('id', flat=True))
+
         doc_contexts, memory_contexts, available_docs = _get_smart_context(
-            query=user_message_text, user_id=chat.user_id, bot_id=bot.id, chat_id=chat_id
+            query=user_message_text,
+            user_id=chat.user_id,
+            bot_id=bot.id,
+            chat_id=chat_id,
+            study_space_ids=study_space_ids
         )
 
         # Observability Log
+        logger.info(f"[Context Stream] Chat {chat_id} | Bot {bot.id} | Strict: {strict_context} | Web: {allow_web_search}")
         logger.info(f"[Context Stream] Available Docs: {available_docs}")
         if doc_contexts:
             sources_used = set()
@@ -392,14 +409,14 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
         logger.info(f"[Stream] Iniciando geração para chat {chat_id} | Web Search: {allow_web_search} | Strict: {strict_context}")
-        
+
         # --- Passa flag para o client de IA (habilita tool) ---
         # Só habilita busca se não estiver em modo estrito
         use_search = allow_web_search and not strict_context
-        
+
         stream = generate_content_stream(
-            contents, 
-            config, 
+            contents,
+            config,
             use_google_search=use_search
         )
 
@@ -421,7 +438,7 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                     parts = buffer.split(SEPARATOR)
                     text_part = parts[0]
                     # O restante vai para o JSON (pode ser que o chunk tenha trazido o início do JSON)
-                    suggestion_part = "".join(parts[1:]) 
+                    suggestion_part = "".join(parts[1:])
 
                     # Envia o restante do texto que veio antes do separador
                     if text_part:
@@ -439,13 +456,13 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                         # Envia o que é seguro (tudo menos o finalzinho que pode ser início do separador)
                         safe_chunk = buffer[:-SEPARATOR_LEN]
                         buffer = buffer[-SEPARATOR_LEN:] # Mantém o final para a próxima iteração
-                        
+
                         full_clean_content += safe_chunk
                         yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
                         time.sleep(CHUNK_DELAY)
-        
+
         # --- Finalização do Loop ---
-        
+
         # 1. Se sobrou algo no buffer e NÃO estávamos coletando sugestões, é texto final
         if buffer and not is_collecting_suggestions:
             full_clean_content += buffer
@@ -511,7 +528,9 @@ def _get_smart_context(
     query: str,
     user_id: int,
     bot_id: int,
-    chat_id: int
+    chat_id: int,
+    study_space_ids: list = None,
+    allowed_source_ids: list = None
 ) -> tuple:
     """Busca contexto de forma inteligente usando o VectorService multi-doc."""
     try:
@@ -520,10 +539,16 @@ def _get_smart_context(
             query_text=query,
             user_id=user_id,
             bot_id=bot_id,
+            study_space_ids=study_space_ids,
+            allowed_source_ids=allowed_source_ids,
             limit=6,
             recent_doc_source=recent_source
         )
-        available_docs = vector_service.get_available_documents(user_id, bot_id)
+        available_docs = vector_service.get_available_documents(
+            user_id,
+            bot_id,
+            study_space_ids=study_space_ids
+        )
         available_names = [d['source'] for d in available_docs]
         return doc_contexts, memory_contexts, available_names
     except Exception as e:
@@ -584,7 +609,7 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
             suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
             duration=duration_ms
         )
-        
+
         ai_message.save() # Save first to get ID
 
         # Save metrics if present
@@ -600,7 +625,7 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
             try:
                 with open(audio_path, 'rb') as f:
                     filename = f"reply_tts_{uuid.uuid4().hex[:10]}.wav"
-                    ai_message.attachment.save(filename, File(f), save=False) # save=False? Attachment needs ID usually or instance? 
+                    ai_message.attachment.save(filename, File(f), save=False) # save=False? Attachment needs ID usually or instance?
                     # If instance already saved, save=True updates it.
                     # Django FileField save() saves the file and updates the instance.
                     # Since we called ai_message.save() above, it has an ID.

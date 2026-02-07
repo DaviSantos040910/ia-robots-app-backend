@@ -110,18 +110,18 @@ class StudioIntegrationTests(APITestCase):
             'title': 'My Space',
             'description': 'A nice place'
         }
-        
+
         # Create
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['title'], 'My Space')
         space_id = response.data['id']
-        
+
         # List
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        
+
         # Retrieve
         response = self.client.get(f"{url}{space_id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)

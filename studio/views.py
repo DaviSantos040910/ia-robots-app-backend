@@ -19,6 +19,8 @@ from chat.file_processor import FileProcessor
 from chat.vector_service import vector_service
 from chat.services.content_extractor import ContentExtractor
 from chat.services.ai_client import get_ai_client, get_model
+from chat.services.image_description_service import image_description_service
+from studio.services.knowledge_ingestion_service import KnowledgeIngestionService
 from studio.services.source_assembler import SourceAssemblyService
 from studio.services.podcast_scripting import PodcastScriptingService
 from studio.services.audio_mixer import AudioMixerService
@@ -44,33 +46,9 @@ class KnowledgeSourceViewSet(viewsets.ModelViewSet):
         # Save initially
         instance = serializer.save(user=self.request.user)
 
-        # Immediate Extraction
-        extracted_text = ""
-        try:
-            if instance.source_type == KnowledgeSource.SourceType.FILE and instance.file:
-                extracted_text = FileProcessor.extract_text(instance.file.path)
-            elif instance.source_type in [KnowledgeSource.SourceType.URL, KnowledgeSource.SourceType.YOUTUBE] and instance.url:
-                extracted_text = ContentExtractor.extract_from_url(instance.url)
-
-            if extracted_text:
-                instance.extracted_text = extracted_text
-                instance.save(update_fields=['extracted_text'])
-                
-                # Index globally for the user (bot_id=0)
-                try:
-                    chunks = FileProcessor.chunk_text(extracted_text)
-                    vector_service.add_document_chunks(
-                        user_id=instance.user.id,
-                        bot_id=0,
-                        chunks=chunks,
-                        source_name=instance.title
-                    )
-                except Exception as vec_err:
-                    logger.error(f"Error indexing source {instance.id}: {vec_err}")
-
-        except Exception as e:
-            logger.error(f"Error extracting text for KnowledgeSource {instance.id}: {e}")
-            # We don't fail the request, but we log it. Text remains empty/null.
+        # Ingest using centralized service
+        # bot_id=0 signifies Global/Library context
+        KnowledgeIngestionService.ingest_source(instance, bot_id=0)
 
     @action(detail=True, methods=['post'])
     def add_to_chat(self, request, pk=None):
@@ -181,7 +159,7 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         bot_id = request.data.get('bot_id')
         if not bot_id:
             return Response({"error": "bot_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         from bots.models import Bot
         try:
             bot = Bot.objects.get(id=bot_id)
@@ -196,59 +174,35 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         Create and link a KnowledgeSource to this Study Space.
         """
         space = self.get_object()
-        
+
         # 1. Create KnowledgeSource
         title = request.data.get('title', 'Space Upload')
         source_type = request.data.get('source_type', 'FILE')
-        
+
         # Map frontend type to backend choices if needed
         # KnowledgeSource.SourceType: FILE, URL, YOUTUBE, TEXT
-        
+
         source = KnowledgeSource(
             user=request.user,
             title=title,
             source_type=source_type
         )
-        
+
         if source_type == 'FILE' and request.FILES.get('file'):
             source.file = request.FILES['file']
         elif source_type in ['URL', 'YOUTUBE']:
             source.url = request.data.get('url')
             if not request.data.get('title'):
                 source.title = source.url
-        
+
         source.save()
-        
-        # 2. Extract Text (Reuse logic from KnowledgeSourceViewSet.perform_create)
-        try:
-            extracted_text = ""
-            if source.source_type == KnowledgeSource.SourceType.FILE and source.file:
-                extracted_text = FileProcessor.extract_text(source.file.path)
-            elif source.source_type in [KnowledgeSource.SourceType.URL, KnowledgeSource.SourceType.YOUTUBE] and source.url:
-                extracted_text = ContentExtractor.extract_from_url(source.url)
 
-            if extracted_text:
-                source.extracted_text = extracted_text
-                source.save(update_fields=['extracted_text'])
-                
-                # Index globally for the user (bot_id=0)
-                try:
-                    chunks = FileProcessor.chunk_text(extracted_text)
-                    vector_service.add_document_chunks(
-                        user_id=source.user.id,
-                        bot_id=0,
-                        chunks=chunks,
-                        source_name=source.title
-                    )
-                except Exception as vec_err:
-                    logger.error(f"Error indexing source {source.id}: {vec_err}")
-
-        except Exception as e:
-            logger.error(f"Error extracting text for Study Space source: {e}")
+        # 2. Ingest using centralized service for this Study Space
+        KnowledgeIngestionService.ingest_source(source, study_space_id=space.id)
 
         # 3. Link to Space
         space.sources.add(source)
-        
+
         return Response(KnowledgeSourceSerializer(source).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
@@ -257,7 +211,7 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         source_id = request.data.get('source_id')
         if not source_id:
             return Response({"error": "source_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-            
+
         try:
             source = KnowledgeSource.objects.get(id=source_id, user=request.user)
             space.sources.remove(source)
@@ -291,7 +245,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         chat = serializer.validated_data['chat']
         if chat.user != self.request.user:
             raise permissions.PermissionDenied("You do not have access to this chat.")
-        
+
         # Save initially (status is PROCESSING by default in model)
         instance = serializer.save()
 
@@ -336,8 +290,8 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 'includeChatHistory': options.get('includeChatHistory', False)
             }
             full_context = SourceAssemblyService.get_context_from_config(
-                artifact.chat.id, 
-                config, 
+                artifact.chat.id,
+                config,
                 query=artifact.title  # Pass title as RAG query
             )
 
@@ -362,7 +316,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 system_instruction=system_instruction,
                 response_mime_type="application/json"
             )
-            
+
             if response_schema:
                 generate_config.response_schema = response_schema
 
@@ -429,7 +383,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             f"Language: Detect the language from the context (default to Portuguese if unclear).\n"
             f"Target Audience Difficulty: {difficulty}.\n"
         )
-        
+
         if instructions:
             base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n"
 
@@ -440,7 +394,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
             base_instruction += f"Generate exactly {quantity} questions."
             schema = QUIZ_SCHEMA
-        
+
         elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
             base_instruction += f"Generate exactly {quantity} cards."
             schema = FLASHCARD_SCHEMA
@@ -452,7 +406,7 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
         elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
             base_instruction += f"Generate exactly {quantity} slides."
             schema = SLIDE_SCHEMA
-        
+
         return base_instruction, schema
 
     @action(detail=True, methods=['get'])

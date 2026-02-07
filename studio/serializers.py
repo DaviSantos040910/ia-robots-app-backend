@@ -17,7 +17,7 @@ class KnowledgeArtifactSerializer(serializers.ModelSerializer):
     source_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
     custom_instructions = serializers.CharField(write_only=True, required=False)
     # include_chat_history REMOVED
-    
+
     # Input field for Podcast duration (Short/Medium/Long)
     duration = serializers.CharField(write_only=True, required=False)
 
@@ -153,31 +153,31 @@ class StudySpaceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         source_ids = validated_data.pop('source_ids', [])
         bot_ids = validated_data.pop('bot_ids', [])
-        
+
         space = super().create(validated_data)
-        
+
         if source_ids:
             space.sources.set(source_ids)
         if bot_ids:
             from bots.models import Bot
             bots = Bot.objects.filter(id__in=bot_ids)
             space.bots.set(bots)
-            
+
         return space
 
     def update(self, instance, validated_data):
         source_ids = validated_data.pop('source_ids', None)
         bot_ids = validated_data.pop('bot_ids', None)
-        
+
         instance = super().update(instance, validated_data)
-        
+
         if source_ids is not None:
             instance.sources.set(source_ids)
         if bot_ids is not None:
             from bots.models import Bot
             bots = Bot.objects.filter(id__in=bot_ids)
             instance.bots.set(bots)
-            
+
         return instance
 
     def get_bots(self, obj):

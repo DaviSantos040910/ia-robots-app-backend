@@ -16,7 +16,7 @@ class FileProcessor:
         if not os.path.exists(file_path):
             logger.error(f"FileProcessor: Arquivo não encontrado em {file_path}")
             return ""
-        
+
         text = ""
         is_markdown = False
 
@@ -62,14 +62,14 @@ class FileProcessor:
                         text = f.read()
                 except Exception as e:
                     logger.error(f"Erro ao ler TXT: {e}")
-            
+
             else:
                 logger.warning(f"Tipo de arquivo não suportado para extração: {mime_type}")
 
         except Exception as e:
             logger.error(f"Erro genérico no FileProcessor ({file_path}): {e}")
             return ""
-        
+
         # Se for Markdown, preservamos a formatação (quebras de linha são importantes)
         if is_markdown:
             return text
@@ -83,29 +83,29 @@ class FileProcessor:
         Divide o texto em blocos menores com sobreposição (overlap) para manter contexto.
         """
         if not text: return []
-        
+
         chunks = []
         start = 0
         text_len = len(text)
-        
+
         while start < text_len:
             end = start + chunk_size
-            
+
             # Tenta não cortar palavras no meio: procura o último espaço antes do corte
             if end < text_len:
                 last_space = text.rfind(' ', max(start, end - 100), end)
                 if last_space != -1:
                     end = last_space
-            
+
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
-            
+
             # Se atingiu o final, para
             if end >= text_len:
                 break
-                
+
             # Avança o cursor, recuando pelo tamanho do overlap para garantir continuidade
             start = end - overlap
-            
+
         return chunks

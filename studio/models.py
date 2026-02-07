@@ -7,6 +7,7 @@ class KnowledgeSource(models.Model):
         FILE = 'FILE', 'File'
         URL = 'URL', 'URL'
         YOUTUBE = 'YOUTUBE', 'YouTube'
+        IMAGE = 'IMAGE', 'Image'
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='knowledge_sources')
     title = models.CharField(max_length=255)
@@ -37,10 +38,10 @@ class StudySpace(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     cover_image = models.ImageField(upload_to='study_spaces/', null=True, blank=True)
-    
+
     # Relationship with KnowledgeSource (Many-to-Many)
     sources = models.ManyToManyField(KnowledgeSource, related_name='study_spaces', blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

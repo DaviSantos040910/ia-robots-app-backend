@@ -21,7 +21,7 @@ class ExploreBotListView(generics.ListAPIView):
     def get_queryset(self):
         # Start with only public bots
         queryset = Bot.objects.filter(publicity=Bot.Publicity.PUBLIC)
-        
+
         # Filter by category
         category_id = self.request.query_params.get('category_id')
         if category_id:
@@ -29,12 +29,12 @@ class ExploreBotListView(generics.ListAPIView):
             # We now filter using 'categories__id' because it's a ManyToManyField.
             # This checks if the bot belongs to the category with the given ID.
             queryset = queryset.filter(categories__id=category_id)
-            
+
         # Filter by search term
         search_term = self.request.query_params.get('q')
         if search_term:
             queryset = queryset.filter(name__icontains=search_term)
-            
+
         return queryset.distinct() # Use distinct() to avoid duplicates if a bot matches multiple criteria
 
 class SearchHistoryView(generics.ListCreateAPIView):

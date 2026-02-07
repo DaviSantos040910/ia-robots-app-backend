@@ -44,6 +44,8 @@ from .services import (
     handle_voice_message,
     process_message_stream
 )
+from chat.services.image_description_service import image_description_service
+from studio.services.knowledge_ingestion_service import KnowledgeIngestionService
 from config.pagination import StandardMessagePagination
 from .vector_service import vector_service
 from .file_processor import FileProcessor
@@ -260,10 +262,10 @@ class ChatMessageListView(generics.ListCreateAPIView):
 class StreamChatMessageView(View):
     """
     Endpoint SSE para chat com streaming de texto.
-    
-    Usa Django View básico (não DRF) para evitar problemas de 
+
+    Usa Django View básico (não DRF) para evitar problemas de
     content negotiation com Server-Sent Events.
-    
+
     URL: POST /api/v1/chats/<pk>/stream/
     """
 
@@ -333,11 +335,11 @@ class StreamChatMessageView(View):
             process_message_stream(user.id, chat.id, content),
             content_type='text/event-stream'
         )
-        
+
         # Headers essenciais para SSE
         response['Cache-Control'] = 'no-cache'
         response['X-Accel-Buffering'] = 'no'
-        
+
         return response
 
 
@@ -391,19 +393,31 @@ class ChatMessageAttachmentView(generics.CreateAPIView):
                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                         'text/plain'
                     ]
+                    
+                    text = None
                     if obj.attachment_type == 'file' and mime in processable_mimes:
+                         text = FileProcessor.extract_text(obj.attachment.path, mime)
+                    elif obj.attachment_type == 'image' and mime and mime.startswith('image/'):
+                         logger.info(f"[RAG Image] Descrevendo: {obj.original_filename}")
+                         text = image_description_service.describe_image(obj.attachment.path)
+
+                    if text:
                         try:
-                            logger.info(f"[RAG] Processando: {obj.original_filename}")
-                            text = FileProcessor.extract_text(obj.attachment.path, mime)
-                            if text:
-                                chunks = FileProcessor.chunk_text(text)
-                                if chunks:
-                                    vector_service.add_document_chunks(
-                                        user_id=chat.user.id,
-                                        bot_id=chat.bot.id,
-                                        chunks=chunks,
-                                        source_name=obj.original_filename
-                                    )
+                            logger.info(f"[RAG] Indexando texto extraído de: {obj.original_filename}")
+                            # Salva o texto extraído no modelo para cache/debug
+                            obj.extracted_text = text
+                            obj.save(update_fields=['extracted_text'])
+
+                            chunks = FileProcessor.chunk_text(text)
+                            if chunks:
+                                vector_service.add_document_chunks(
+                                    user_id=chat.user.id,
+                                    chunks=chunks,
+                                    source_name=obj.original_filename,
+                                    source_id=f"msg_{obj.id}",
+                                    bot_id=chat.bot.id,
+                                    study_space_id=None
+                                )
                         except Exception as rag_error:
                             logger.error(f"[RAG ERROR] {obj.original_filename}: {rag_error}")
 
@@ -555,14 +569,14 @@ class MessageFeedbackView(APIView):
             chat_id=chat_pk,
             chat__user=request.user
         )
-        
+
         feedback = request.data.get('feedback')
         if feedback not in ['like', 'dislike', None]:
             return Response({'detail': 'Invalid feedback value. Use "like", "dislike" or null.'}, status=400)
-            
+
         m.feedback = feedback
         m.save()
-        
+
         return Response({'feedback': m.feedback}, status=200)
 
 
@@ -576,36 +590,36 @@ class RegenerateMessageView(APIView):
 
     def post(self, request, chat_pk):
         chat = get_object_or_404(Chat, id=chat_pk, user=request.user)
-        
+
         # Encontra a última mensagem do usuário
         last_user_msg = chat.messages.filter(role=ChatMessage.Role.USER).order_by('-created_at').first()
-        
+
         if not last_user_msg:
              return Response({"detail": "No user message to reply to."}, status=400)
-             
+
         # Apaga todas as mensagens que vieram DEPOIS dessa mensagem do usuário (normalmente a resposta antiga)
         # Isso garante que limpamos a resposta anterior antes de gerar a nova.
         chat.messages.filter(created_at__gt=last_user_msg.created_at).delete()
-        
+
         # Gera nova resposta (reusando a lógica de get_ai_response)
         # Nota: reply_with_audio defaults to False here for simplicity, or we could pass it from request
         reply_with_audio = request.data.get('reply_with_audio', False)
-        
+
         ai_response_data = get_ai_response(
             chat.id,
             last_user_msg.content,
             user_message_obj=last_user_msg,
             reply_with_audio=reply_with_audio
         )
-        
+
         # ... (Logica de salvar a resposta similar ao ChatMessageListView.create)
         # Para evitar duplicação, o ideal seria refatorar a lógica de salvamento em um service,
         # mas por brevidade vou replicar a parte essencial aqui ou chamar o service se existir.
-        
+
         ai_content = ai_response_data.get('content')
         ai_suggestions = ai_response_data.get('suggestions', [])
         # Ignore audio generation for regenerate for now unless strictly needed
-        
+
         paragraphs = re.split(r'\\n{2,}', ai_content.strip()) if ai_content else []
         if not paragraphs:
             paragraphs = ["..."]
@@ -628,13 +642,13 @@ class RegenerateMessageView(APIView):
         if ai_messages:
             chat.last_message_at = ai_messages[-1].created_at
             chat.save()
-            
+
         response_serializer = ChatMessageSerializer(
             ai_messages,
             many=True,
             context={'request': request}
         )
-        
+
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -701,53 +715,30 @@ class ChatSourceView(APIView):
 
     def post(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id, user=request.user)
-        
+
         # 1. Create KnowledgeSource
         title = request.data.get('title', 'Chat Upload')
         source_type = request.data.get('source_type', 'FILE')
-        
+
         source = KnowledgeSource(
             user=request.user,
             title=title,
             source_type=source_type
         )
-        
+
         if source_type == 'FILE' and request.FILES.get('file'):
             source.file = request.FILES['file']
         elif source_type in ['URL', 'YOUTUBE']:
             source.url = request.data.get('url')
-            
+
         source.save()
-        
-        # 2. Extract Text (Sync for now, or reuse logic)
-        try:
-            extracted_text = ""
-            if source.source_type == 'FILE' and source.file:
-                extracted_text = FileProcessor.extract_text(source.file.path)
-            elif source.url:
-                # Assuming ContentExtractor is available or similar logic
-                from chat.services.content_extractor import ContentExtractor
-                extracted_text = ContentExtractor.extract_from_url(source.url)
-            
-            if extracted_text:
-                source.extracted_text = extracted_text
-                source.save()
-                
-                # 3. Index in Vector DB
-                chunks = FileProcessor.chunk_text(extracted_text)
-                if chunks:
-                    vector_service.add_document_chunks(
-                        user_id=request.user.id,
-                        bot_id=chat.bot.id,
-                        chunks=chunks,
-                        source_name=source.title
-                    )
-        except Exception as e:
-            logger.error(f"Error processing chat source: {e}")
+
+        # 2. Ingest using centralized service for this Chat's Bot
+        KnowledgeIngestionService.ingest_source(source, bot_id=chat.bot.id)
 
         # 4. Link to Chat
         chat.sources.add(source)
-        
+
         return Response({
             'id': source.id,
             'title': source.title,
@@ -758,7 +749,7 @@ class ChatSourceView(APIView):
     def delete(self, request, chat_id, source_id):
         chat = get_object_or_404(Chat, id=chat_id, user=request.user)
         source = get_object_or_404(KnowledgeSource, id=source_id, user=request.user)
-        
+
         if source in chat.sources.all():
             chat.sources.remove(source)
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -774,7 +765,7 @@ class ContextSourcesView(APIView):
 
     def get(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id, user=request.user)
-        
+
         sources_list = []
         seen_ids = set()
 
@@ -791,24 +782,24 @@ class ContextSourcesView(APIView):
             # Does Chat.sources link to ChatMessage or KnowledgeSource?
             # backend/chat/models.py: sources = models.ManyToManyField('studio.KnowledgeSource', ...)
             # So they ARE KnowledgeSource.
-            
+
             # HOWEVER, SourceAssemblyService (read in previous step) looks at ChatMessage.objects.filter(id__in=source_ids).
             # This is WRONG if the sources are KnowledgeSource objects.
             # Previously, "sources" were file attachments on messages.
             # Now, we have a distinct KnowledgeSource model.
             # The SourceAssemblyService must be updated to look at KnowledgeSource model, NOT ChatMessage (or both if we support legacy).
-            
+
             # Legacy support: Messages with attachments.
             # New support: KnowledgeSource objects.
-            
-            # Let's verify what `ContextSourcesView` returns. 
+
+            # Let's verify what `ContextSourcesView` returns.
             # It iterates `chat.sources.all()` -> These are KnowledgeSource.
             # It iterates `space.sources.all()` -> These are KnowledgeSource.
             # So the IDs are consistent (KnowledgeSource IDs).
-            
+
             # The PROBLEM is SourceAssemblyService is querying ChatMessage with these IDs.
             # I need to update SourceAssemblyService to query KnowledgeSource.
-            
+
             if s.id in seen_ids: return
             seen_ids.add(s.id)
             sources_list.append({
@@ -830,5 +821,5 @@ class ContextSourcesView(APIView):
             for space in chat.bot.study_spaces.all():
                 for s in space.sources.all():
                     add_source(s, 'space_source', '')
-            
+
         return Response(sources_list, status=200)

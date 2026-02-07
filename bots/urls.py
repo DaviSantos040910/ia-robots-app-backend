@@ -1,8 +1,8 @@
 # bots/urls.py
 from django.urls import path
 from .views import (
-    BotListCreateView, 
-    BotDetailView, 
+    BotListCreateView,
+    BotDetailView,
     SubscribedBotListView, # New import
     SubscribeBotView     # New import
 )
@@ -12,7 +12,7 @@ urlpatterns = [
     # --- User-facing URLs ---
     path('', BotListCreateView.as_view(), name='bot-list-create'),
     path('<int:pk>/', BotDetailView.as_view(), name='bot-detail'),
-    
+
     # --- NEW URLs ---
     path('subscribed/', SubscribedBotListView.as_view(), name='subscribed-bot-list'),
     path('<int:bot_id>/subscribe/', SubscribeBotView.as_view(), name='subscribe-bot'),

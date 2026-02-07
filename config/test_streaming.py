@@ -43,10 +43,10 @@ try:
     print(f"✅ Tipo da resposta: {type(response)}")
     print(f"   Tem .text? {hasattr(response, 'text')}")
     print(f"   É iterável? {hasattr(response, '__iter__') and not isinstance(response, str)}")
-    
+
     if hasattr(response, 'text'):
         print(f"   Conteúdo: {response.text[:100]}")
-        
+
 except Exception as e:
     print(f"❌ ERRO: {type(e).__name__}: {e}")
 
@@ -63,7 +63,7 @@ try:
     print(f"✅ Aceitou stream=True!")
     print(f"   Tipo: {type(response)}")
     print(f"   É iterável? {hasattr(response, '__iter__')}")
-    
+
     if hasattr(response, '__iter__'):
         print("   Iterando sobre os chunks:")
         for i, chunk in enumerate(response):
@@ -71,7 +71,7 @@ try:
                 print(f"     Chunk {i}: {chunk.text[:30]}...")
             if i >= 2:
                 break
-                
+
 except TypeError as e:
     print(f"❌ stream=True NÃO É ACEITO")
     print(f"   Erro: {e}")
@@ -119,12 +119,12 @@ Baseado nos testes acima:
 
 Se TESTE 2 funcionou (stream=True aceito):
   ✅ Usar: client.models.generate_content(..., stream=True)
-  
+
 Se TESTE 3 funcionou (método existe):
   ✅ Usar: client.models.generate_content_stream(...)
-  
+
 Se ambos falharam:
   ⚠️  Atualizar biblioteca: pip install --upgrade google-genai
-  
+
 Aguardando resultado para implementar a solução correta...
 """)

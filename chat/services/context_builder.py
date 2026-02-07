@@ -63,7 +63,7 @@ def get_recent_attachment_context(chat_id: int) -> Optional[str]:
         .order_by('-created_at')
         .first()
     )
-    
+
     return recent_attachment.original_filename if recent_attachment else None
 
 
@@ -79,7 +79,7 @@ def build_system_instruction(
 ) -> str:
     """
     Constrói system instruction otimizado para RAG multi-documento e Output Format controlado.
-    
+
     Args:
         bot_prompt: Prompt do personagem/bot
         user_name: Nome do usuário
@@ -90,7 +90,7 @@ def build_system_instruction(
         allow_web_search: Se True, injeta instruções específicas para uso da Google Search
         strict_context: Se True, a IA deve responder APENAS com base nas fontes.
     """
-    
+
     # Lista de documentos disponíveis
     docs_list_section = ""
     if available_docs:
@@ -133,11 +133,21 @@ Você tem acesso a informações em tempo real via Google Search.
     strict_instruction = ""
     if strict_context:
         strict_instruction = """
-## MODO ESTRITO DE CONTEXTO ATIVADO
-1. **USE APENAS O CONTEXTO FORNECIDO**: Você DEVE responder usando APENAS as informações contidas na seção "TRECHOS RELEVANTES DOS DOCUMENTOS".
-2. **NÃO INVENTE**: Se a resposta não estiver nos documentos, diga claramente: "Desculpe, não encontrei essa informação nos documentos fornecidos."
-3. **SEM CONHECIMENTO EXTERNO**: Não use seu conhecimento geral para responder perguntas.
-4. **PRIORIDADE**: Esta regra anula qualquer outra instrução de permissividade.
+## 🚨 MODO ESTRITO DE CONTEXTO ATIVADO 🚨
+⚠️ **INSTRUÇÃO CRÍTICA**: Você está operando em modo RESTRITO.
+1. **IGNORAR HISTÓRICO DE PERMISSIVIDADE**: Se em mensagens anteriores você usou conhecimento externo, IGNORE esse precedente. Agora você está PROIBIDO de usar conhecimento externo.
+2. **USE APENAS O CONTEXTO FORNECIDO**: Você DEVE responder usando APENAS as informações contidas na seção "TRECHOS RELEVANTES DOS DOCUMENTOS".
+3. **NÃO INVENTE**: Se a resposta não estiver nos documentos, diga claramente: "Desculpe, não encontrei essa informação nos documentos fornecidos."
+4. **SEM INTERNET/CONHECIMENTO GERAL**: Não use seu conhecimento geral ou internet, mesmo que o usuário peça.
+5. **PRIORIDADE MÁXIMA**: Esta regra anula qualquer outra instrução do seu personagem ou histórico.
+"""
+    else:
+        # Se NÃO for estrito, explicitamos o modo aberto para garantir que ele saia do modo estrito se estava antes
+        strict_instruction = """
+## MODO DE CONHECIMENTO MISTO
+- Você pode usar os documentos fornecidos como fonte primária.
+- Se necessário, você PODE usar seu conhecimento geral ou internet (se habilitada) para complementar.
+- Ignore restrições de "apenas contexto" de turnos anteriores.
 """
 
     return f"""# PERSONAGEM
@@ -166,5 +176,5 @@ Você tem acesso a informações em tempo real via Google Search.
 3. **NÃO REPITA** - Evite repetir informações já ditas.
 4. **FORMATAÇÃO** - Use Markdown rico (negrito, itálico, listas) para facilitar a leitura.
 5. **SUGESTÕES DE RESPOSTA** - Ao final da resposta, se houver sugestões de resposta para o usuário, você DEVE iniciar com o separador exato |||SUGGESTIONS||| e depois fornecer uma lista JSON estrita. NUNCA coloque o JSON no meio do texto.
-   Exemplo de Saída Esperada: 
+   Exemplo de Saída Esperada:
    ...espero ter ajudado com isso. |||SUGGESTIONS||| ["Obrigado", "Conte mais", "Encerrar"]"""

@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Bot
 from .serializers import BotSerializer, BotDetailSerializer
-from chat.services import generate_suggestions_for_bot 
+from chat.services import generate_suggestions_for_bot
 
 class BotListCreateView(generics.ListCreateAPIView):
     """
@@ -21,7 +21,7 @@ class BotListCreateView(generics.ListCreateAPIView):
         # --- CORREÇÃO APLICADA AQUI ---
         # 1. First, we save the bot and assign the owner, as before.
         bot = serializer.save(owner=self.request.user)
-        
+
         # 2. Then, we automatically add the owner to the subscribers list.
         # This ensures the created bot appears on the user's "My Bots" screen.
         bot.subscribers.add(self.request.user)
@@ -47,13 +47,13 @@ class BotDetailView(generics.RetrieveUpdateDestroyAPIView):
     API view for retrieving, updating, and deleting a bot.
     """
     queryset = Bot.objects.all()
-    serializer_class = BotDetailSerializer 
+    serializer_class = BotDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         return Bot.objects.all()
-    
+
     def get_serializer_class(self):
         # Use BotSerializer for write operations (update/create) to support all fields
         if self.request.method in ['PUT', 'PATCH', 'POST']:
