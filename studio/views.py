@@ -335,7 +335,11 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
                 'selectedSourceIds': options.get('source_ids', []),
                 'includeChatHistory': options.get('includeChatHistory', False)
             }
-            full_context = SourceAssemblyService.get_context_from_config(artifact.chat.id, config)
+            full_context = SourceAssemblyService.get_context_from_config(
+                artifact.chat.id, 
+                config, 
+                query=artifact.title  # Pass title as RAG query
+            )
 
             # Handle Podcast flow separately
             if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
@@ -350,8 +354,11 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             system_instruction, response_schema = self._build_prompt_and_schema(artifact.type, artifact.title, full_context, options)
 
             # 3. Call AI with Structured Output
+            # If using RAG (selected source IDs), lower temperature
+            temperature = 0.3 if options.get('source_ids') else 0.7
+
             generate_config = types.GenerateContentConfig(
-                temperature=0.7,
+                temperature=temperature,
                 system_instruction=system_instruction,
                 response_mime_type="application/json"
             )
