@@ -229,45 +229,128 @@ def get_ai_response(
         # Observability Log
         logger.info(f"[Context] Chat {chat_id} | Bot {bot.id} | Strict: {strict_context} | Web: {allow_web_search}")
         logger.info(f"[Context] Available Docs: {available_doc_names}")
+        
+        # --- Format Contexts with Citations ---
+        formatted_doc_contexts = []
+        source_map = {} # source_id -> {index: 1, title: 'Title'}
+        used_source_indices = []
+
         if doc_contexts:
-            sources_used = set()
-            for c in doc_contexts:
-                if "[DOCUMENTO: " in c:
-                    try:
-                        src = c.split("[DOCUMENTO: ")[1].split(" (trecho")[0]
-                        sources_used.add(src)
-                    except: pass
-            logger.info(f"[Context] Sources Included in Prompt ({len(doc_contexts)} chunks): {list(sources_used)}")
+            for chunk in doc_contexts:
+                # chunk is now a Dict: {content, source, source_id, ...}
+                s_id = chunk.get('source_id') or chunk.get('source') # Fallback to title if ID missing
+                s_title = chunk.get('source', 'Documento')
+                
+                if s_id not in source_map:
+                    source_map[s_id] = {'index': len(source_map) + 1, 'title': s_title}
+                
+                s_idx = source_map[s_id]['index']
+                used_source_indices.append(s_idx)
+                
+                # Format: [1] (Title): Content
+                formatted_doc_contexts.append(f"[Fonte {s_idx}] ({s_title}):\n{chunk['content']}")
 
-        system_instruction = build_system_instruction(
-            bot_prompt=user_defined_prompt,
-            user_name=user_name,
-            doc_contexts=doc_contexts,
-            memory_contexts=memory_contexts,
-            current_time=current_time_str,
-            available_docs=available_doc_names,
-            allow_web_search=allow_web_search, # Passa a flag para o construtor de prompt
-            strict_context=strict_context
-        )
+            logger.info(f"[Context] Sources Mapped: {source_map}")
 
-        # Adjust temperature based on RAG context presence
-        temperature = 0.3 if doc_contexts else 0.7
-
-        generation_config = types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=2500,
-            system_instruction=system_instruction
-        )
-
-        # Adiciona ferramenta Google Search na configuração síncrona (Apenas se Strict Context estiver OFF)
-        if allow_web_search and not strict_context:
-            # Se config.tools já existe, adiciona. Se não, cria.
-            if hasattr(generation_config, 'tools') and generation_config.tools:
-                generation_config.tools.append(types.Tool(google_search=types.GoogleSearch()))
+        # --- Strict Mode Fallback Logic (NotebookLM Style) ---
+        if strict_context and not doc_contexts:
+            if available_doc_names:
+                logger.info("[Sync] Strict Mode + No Context Found -> Generating Refusal Template")
+                refusal_prompt = (
+                    f"You are a strict knowledge assistant. Your personality is: '{user_defined_prompt}'. "
+                    f"The user asked: '{user_message_text}'. "
+                    f"You searched the following available documents but found NO relevant information: {', '.join(available_doc_names[:5])}. "
+                    "You MUST output a response following EXACTLY this template, but adopting your personality tone in the placeholders:\n\n"
+                    f"Os documentos fornecidos não contêm informações sobre {user_message_text}.\n\n"
+                    "As fontes disponíveis tratam principalmente de:\n"
+                    "- <Generate a very brief 1-sentence summary of what the filenames imply>\n\n"
+                    "Para que eu possa responder com base nas suas fontes, você pode:\n"
+                    "- adicionar uma fonte que explique esse tema,\n"
+                    "- indicar onde isso aparece (arquivo/página),\n"
+                    "- ou reformular a pergunta usando termos presentes nos documentos."
+                )
+                
+                # Override prompt content for refusal
+                # Inject personality explicitly in the prompt construction so it overrides default model behavior
+                contents = [{"role": "user", "parts": [{"text": refusal_prompt}]}]
+                generation_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=500)
+                
+                # Bypass standard flow
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=contents,
+                    config=generation_config
+                )
+                return _parse_ai_response(response.text if response.text else "")
             else:
-                generation_config.tools = [types.Tool(google_search=types.GoogleSearch())]
+                return {'content': "Para responder, preciso que você adicione fontes de estudo (PDFs, Arquivos, Links) ao chat ou espaço de estudo.", 'suggestions': []}
 
-        input_parts = []
+        # --- Mixed Mode Fallback (Sync) ---
+        elif not strict_context and not doc_contexts and allow_web_search:
+             logger.info("[Sync] Mixed Mode + No Context -> Forcing Two-Block Answer")
+             mixed_prompt = (
+                 f"User Question: '{user_message_text}'\n\n"
+                 f"Your Personality: '{user_defined_prompt}'\n"
+                 "CONTEXT CHECK: You searched the user's documents but found NO matches.\n"
+                 "INSTRUCTION: You must answer using general knowledge/web search, but you MUST format it in two distinct blocks.\n\n"
+                 "TEMPLATE:\n"
+                 f"Nas suas fontes, não encontrei informações sobre {user_message_text}.\n\n"
+                 "Fora do contexto dos documentos, de forma geral:\n"
+                 "<Insert your helpful answer here based on general knowledge or web search>"
+             )
+             
+             system_instruction = build_system_instruction(
+                bot_prompt=user_defined_prompt,
+                user_name=user_name,
+                doc_contexts=[],
+                memory_contexts=memory_contexts,
+                current_time=current_time_str,
+                available_docs=available_doc_names,
+                allow_web_search=True,
+                strict_context=False
+            )
+             
+             generation_config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=2500,
+                system_instruction=system_instruction,
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            )
+             
+             # Override input
+             input_parts = [{"text": mixed_prompt}]
+
+        else:
+            # --- Standard Flow ---
+            system_instruction = build_system_instruction(
+                bot_prompt=user_defined_prompt,
+                user_name=user_name,
+            doc_contexts=formatted_doc_contexts,
+                memory_contexts=memory_contexts,
+                current_time=current_time_str,
+                available_docs=available_doc_names,
+                allow_web_search=allow_web_search, # Passa a flag para o construtor de prompt
+                strict_context=strict_context
+            )
+
+            # Adjust temperature based on RAG context presence
+            temperature = 0.3 if formatted_doc_contexts else 0.7
+
+            generation_config = types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=2500,
+                system_instruction=system_instruction
+            )
+
+            # Adiciona ferramenta Google Search na configuração síncrona (Apenas se Strict Context estiver OFF)
+            if allow_web_search and not strict_context:
+                # Se config.tools já existe, adiciona. Se não, cria.
+                if hasattr(generation_config, 'tools') and generation_config.tools:
+                    generation_config.tools.append(types.Tool(google_search=types.GoogleSearch()))
+                else:
+                    generation_config.tools = [types.Tool(google_search=types.GoogleSearch())]
+
+            input_parts = []
         if user_message_obj and user_message_obj.attachment:
             try:
                 if hasattr(user_message_obj.attachment, 'path') and user_message_obj.attachment.path:
@@ -290,6 +373,16 @@ def get_ai_response(
         )
 
         result_data = _parse_ai_response(response.text if response.text else "")
+        
+        # Append Citations Legend if sources were used
+        if source_map:
+            citations_text = "\n\nFontes:"
+            # Sort by index
+            sorted_sources = sorted(source_map.values(), key=lambda x: x['index'])
+            for s in sorted_sources:
+                citations_text += f"\n[{s['index']}] {s['title']}"
+            
+            result_data['content'] += citations_text
 
         # Metrics Logic
         metrics = _calculate_metrics(result_data['content'], available_doc_names)
@@ -375,26 +468,111 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         # Observability Log
         logger.info(f"[Context Stream] Chat {chat_id} | Bot {bot.id} | Strict: {strict_context} | Web: {allow_web_search}")
         logger.info(f"[Context Stream] Available Docs: {available_docs}")
+        
+        # --- Format Contexts with Citations ---
+        formatted_doc_contexts = []
+        source_map = {} 
         if doc_contexts:
-            sources_used = set()
-            for c in doc_contexts:
-                if "[DOCUMENTO: " in c:
-                    try:
-                        src = c.split("[DOCUMENTO: ")[1].split(" (trecho")[0]
-                        sources_used.add(src)
-                    except: pass
-            logger.info(f"[Context Stream] Sources Included in Prompt ({len(doc_contexts)} chunks): {list(sources_used)}")
+            for chunk in doc_contexts:
+                s_id = chunk.get('source_id') or chunk.get('source')
+                s_title = chunk.get('source', 'Documento')
+                if s_id not in source_map:
+                    source_map[s_id] = {'index': len(source_map) + 1, 'title': s_title}
+                s_idx = source_map[s_id]['index']
+                formatted_doc_contexts.append(f"[Fonte {s_idx}] ({s_title}):\n{chunk['content']}")
+            logger.info(f"[Context Stream] Sources Mapped: {source_map}")
 
-        system_instruction = build_system_instruction(
-            bot_prompt=user_defined_prompt,
-            user_name=user_name,
-            doc_contexts=doc_contexts,
-            memory_contexts=memory_contexts,
-            current_time=current_time_str,
-            available_docs=available_docs,
-            allow_web_search=allow_web_search, # --- Passa flag para o system prompt ---
-            strict_context=strict_context
-        )
+        # --- Strict Mode Fallback Logic (NotebookLM Style) ---
+        if strict_context and not doc_contexts:
+            if available_docs:
+                logger.info("[Stream] Strict Mode + No Context Found -> Generating Refusal Template")
+                # Generate a strict refusal based on available sources
+                refusal_prompt = (
+                    f"You are a strict knowledge assistant. Your personality is: '{user_defined_prompt}'. "
+                    f"The user asked: '{user_message_text}'. "
+                    f"You searched the following available documents but found NO relevant information: {', '.join(available_docs[:5])}. "
+                    "You MUST output a response following EXACTLY this template, but adopting your personality tone in the placeholders:\n\n"
+                    f"Os documentos fornecidos não contêm informações sobre {user_message_text}.\n\n"
+                    "As fontes disponíveis tratam principalmente de:\n"
+                    "- <Generate a very brief 1-sentence summary of what the filenames imply>\n\n"
+                    "Para que eu possa responder com base nas suas fontes, você pode:\n"
+                    "- adicionar uma fonte que explique esse tema,\n"
+                    "- indicar onde isso aparece (arquivo/página),\n"
+                    "- ou reformular a pergunta usando termos presentes nos documentos."
+                )
+                
+                # Override prompt content for refusal
+                contents = [{"role": "user", "parts": [{"text": refusal_prompt}]}]
+                # Use a clean config for refusal
+                config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=500)
+            else:
+                logger.info("[Stream] Strict Mode + No Docs -> Generic Refusal")
+                yield f"data: {json.dumps({'type': 'chunk', 'text': 'Para responder, preciso que você adicione fontes de estudo (PDFs, Arquivos, Links) ao chat ou espaço de estudo.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'message_id': 0, 'clean_content': 'Para responder, preciso que você adicione fontes de estudo (PDFs, Arquivos, Links) ao chat ou espaço de estudo.', 'suggestions': []})}\n\n"
+                return
+        
+        # --- Mixed Mode Fallback (No Context but Web Allowed) ---
+        elif not strict_context and not doc_contexts and allow_web_search:
+             logger.info("[Stream] Mixed Mode + No Context -> Forcing Two-Block Answer")
+             mixed_prompt = (
+                 f"User Question: '{user_message_text}'\n\n"
+                 f"Your Personality: '{user_defined_prompt}'\n"
+                 "CONTEXT CHECK: You searched the user's documents but found NO matches.\n"
+                 "INSTRUCTION: You must answer using general knowledge/web search, but you MUST format it in two distinct blocks.\n\n"
+                 "TEMPLATE:\n"
+                 f"Nas suas fontes, não encontrei informações sobre {user_message_text}.\n\n"
+                 "Fora do contexto dos documentos, de forma geral:\n"
+                 "<Insert your helpful answer here based on general knowledge or web search>"
+             )
+             
+             # Override prompt content, but keep history to maintain conversation flow if needed
+             # Actually, for this specific format enforcement, it's safer to be direct in the last turn
+             prompt_text = mixed_prompt
+             contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
+             
+             # Use standard config but enable web search
+             system_instruction = build_system_instruction(
+                bot_prompt=user_defined_prompt,
+                user_name=user_name,
+                doc_contexts=[], # Empty
+                memory_contexts=memory_contexts,
+                current_time=current_time_str,
+                available_docs=available_docs,
+                allow_web_search=True,
+                strict_context=False
+            )
+             config = types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=3000,
+                system_instruction=system_instruction,
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            )
+
+        else:
+            # Standard Flow (Evidence Found OR Mixed Mode without Web)
+            system_instruction = build_system_instruction(
+                bot_prompt=user_defined_prompt,
+                user_name=user_name,
+                doc_contexts=formatted_doc_contexts,
+                memory_contexts=memory_contexts,
+                current_time=current_time_str,
+                available_docs=available_docs,
+                allow_web_search=allow_web_search,
+                strict_context=strict_context
+            )
+            
+            config = types.GenerateContentConfig(
+                temperature=0.3 if formatted_doc_contexts else 0.7,
+                max_output_tokens=3000,
+                system_instruction=system_instruction
+            )
+            
+            # Enable tools only if allowed and not strict
+            if allow_web_search and not strict_context:
+                 config.tools = [types.Tool(google_search=types.GoogleSearch())]
+
+            prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
+            contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
         # Adjust temperature based on RAG context presence
         temperature = 0.3 if doc_contexts else 0.7
@@ -500,6 +678,21 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             metrics = _calculate_metrics(full_clean_content, available_docs)
             _save_metrics(ai_message, metrics)
             logger.info(f"[Metrics Stream] {metrics}")
+
+            # 3.1 Append Citations (Stream)
+            if source_map:
+                citations_text = "\n\nFontes:"
+                sorted_sources = sorted(source_map.values(), key=lambda x: x['index'])
+                for s in sorted_sources:
+                    citations_text += f"\n[{s['index']}] {s['title']}"
+                
+                full_clean_content += citations_text
+                # Send the citations chunk
+                yield f"data: {json.dumps({'type': 'chunk', 'text': citations_text})}\n\n"
+                
+                # Update DB message
+                ai_message.content = full_clean_content
+                ai_message.save()
 
             # 4. Envia evento final para o frontend fechar conexão
             end_payload = {

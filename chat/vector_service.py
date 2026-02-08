@@ -300,7 +300,7 @@ class VectorService:
         recent_doc_source: Optional[str] = None,
         allowed_source_ids: Optional[List[str]] = None, # Changed from allowed_sources
         allowed_sources: Optional[List[str]] = None # Deprecated but kept for compatibility
-    ) -> Tuple[List[str], List[str]]:
+    ) -> Tuple[List[Dict], List[str]]:
         """
         Busca inteligente com suporte a múltiplos documentos e filtro opcional por ID.
         """
@@ -372,7 +372,11 @@ class VectorService:
             return [], []
 
     def _build_or_filter(self, user_id: int, bot_id: int, study_space_ids: Optional[List[int]]) -> dict:
-        or_conds = [{"bot_id": str(bot_id)}]
+        # Include current bot ID AND '0' (User Library/Global) in scope
+        or_conds = [
+            {"bot_id": str(bot_id)},
+            {"bot_id": "0"} 
+        ]
         if study_space_ids:
             for sid in study_space_ids:
                 or_conds.append({"study_space_id": str(sid)})
@@ -387,7 +391,7 @@ class VectorService:
 
     def _search_specific_document(
         self, query: str, user_id: int, bot_id: int, source: str, limit: int, study_space_ids: Optional[List[int]] = None, allowed_source_ids: Optional[List[str]] = None
-    ) -> List[str]:
+    ) -> List[Dict]:
         """Busca em um documento específico."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
@@ -409,7 +413,7 @@ class VectorService:
 
     def _search_comparative(
         self, query: str, user_id: int, bot_id: int, sources: List[str], limit: int, study_space_ids: Optional[List[int]] = None, allowed_source_ids: Optional[List[str]] = None
-    ) -> List[str]:
+    ) -> List[Dict]:
         """
         Busca comparativa - garante resultados de múltiplos documentos.
         """
@@ -438,7 +442,7 @@ class VectorService:
 
     def _search_general(
         self, query: str, user_id: int, bot_id: int, limit: int, allowed_source_ids: Optional[List[str]] = None, study_space_ids: Optional[List[int]] = None
-    ) -> List[str]:
+    ) -> List[Dict]:
         """
         Busca geral com diversificação de fontes (Reranking).
         Garante pelo menos 1 chunk por documento relevante quando possível.
@@ -538,15 +542,17 @@ class VectorService:
 
         return self._format_candidates(final_selection)
 
-    def _format_candidates(self, candidates: List[dict]) -> List[str]:
+    def _format_candidates(self, candidates: List[dict]) -> List[Dict]:
         """Helper to format parsed candidates list."""
         contexts = []
         for c in candidates:
-            source = c['meta'].get('source', 'Documento')
-            chunk_idx = c['meta'].get('chunk_index', 0)
-            total = c['meta'].get('total_chunks', 1)
-            header = f"[DOCUMENTO: {source} (trecho {chunk_idx + 1}/{total})]"
-            contexts.append(f"{header}\n{c['doc']}")
+            contexts.append({
+                'content': c['doc'],
+                'source': c['meta'].get('source', 'Documento'),
+                'source_id': c['meta'].get('source_id', ''),
+                'chunk_index': c['meta'].get('chunk_index', 0),
+                'total_chunks': c['meta'].get('total_chunks', 1)
+            })
         return contexts
 
     def _search_memories(
@@ -576,7 +582,7 @@ class VectorService:
 
         return contexts
 
-    def _format_doc_results(self, results: dict) -> List[str]:
+    def _format_doc_results(self, results: dict) -> List[Dict]:
         """Formata resultados de documentos com fonte clara."""
         contexts = []
 
@@ -584,13 +590,13 @@ class VectorService:
             return contexts
 
         for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-            source = meta.get('source', 'Documento')
-            chunk_idx = meta.get('chunk_index', 0)
-            total = meta.get('total_chunks', 1)
-
-            # Formato claro para a IA saber de onde vem cada trecho
-            header = f"[DOCUMENTO: {source} (trecho {chunk_idx + 1}/{total})]"
-            contexts.append(f"{header}\n{doc}")
+            contexts.append({
+                'content': doc,
+                'source': meta.get('source', 'Documento'),
+                'source_id': meta.get('source_id', ''),
+                'chunk_index': meta.get('chunk_index', 0),
+                'total_chunks': meta.get('total_chunks', 1)
+            })
 
         return contexts
 
