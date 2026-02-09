@@ -44,6 +44,37 @@ vector_service = VectorService()
 image_service = ImageGenerationService()
 
 
+def _generate_strict_refusal(client, user_message_text: str, bot_prompt: str, available_doc_names: list) -> str:
+    """
+    Generates a polite but strict refusal message using the bot's personality.
+    Used when strict context is enabled but no relevant chunks are found OR generated response lacks citations.
+    """
+    refusal_prompt = (
+        f"You are a strict knowledge assistant. Your personality is: '{bot_prompt}'. "
+        f"The user asked: '{user_message_text}'. "
+        f"You searched the following available documents but found NO relevant information: {', '.join(available_doc_names[:5])}. "
+        "You MUST output a response following EXACTLY this template, but adopting your personality tone in the placeholders:\n\n"
+        f"Os documentos fornecidos não contêm informações sobre {user_message_text}.\n\n"
+        "As fontes disponíveis tratam principalmente de:\n"
+        "- <Generate a very brief 1-sentence summary of what the filenames imply>\n\n"
+        "Para que eu possa responder com base nas suas fontes, você pode:\n"
+        "- adicionar uma fonte que explique esse tema,\n"
+        "- indicar onde isso aparece (arquivo/página),\n"
+        "- ou reformular a pergunta usando termos presentes nos documentos."
+    )
+    
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[{"role": "user", "parts": [{"text": refusal_prompt}]}],
+            config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=500)
+        )
+        return response.text.strip() if response.text else "Desculpe, não encontrei informações nos documentos."
+    except Exception as e:
+        logger.error(f"Error generating strict refusal: {e}")
+        return "Desculpe, não encontrei informações nos documentos fornecidos."
+
+
 def _calculate_metrics(response_text: str, context_sources: list) -> dict:
     """Calcula métricas de cobertura de fontes na resposta."""
     if not response_text:
@@ -256,32 +287,8 @@ def get_ai_response(
         if strict_context and not doc_contexts:
             if available_doc_names:
                 logger.info("[Sync] Strict Mode + No Context Found -> Generating Refusal Template")
-                refusal_prompt = (
-                    f"You are a strict knowledge assistant. Your personality is: '{user_defined_prompt}'. "
-                    f"The user asked: '{user_message_text}'. "
-                    f"You searched the following available documents but found NO relevant information: {', '.join(available_doc_names[:5])}. "
-                    "You MUST output a response following EXACTLY this template, but adopting your personality tone in the placeholders:\n\n"
-                    f"Os documentos fornecidos não contêm informações sobre {user_message_text}.\n\n"
-                    "As fontes disponíveis tratam principalmente de:\n"
-                    "- <Generate a very brief 1-sentence summary of what the filenames imply>\n\n"
-                    "Para que eu possa responder com base nas suas fontes, você pode:\n"
-                    "- adicionar uma fonte que explique esse tema,\n"
-                    "- indicar onde isso aparece (arquivo/página),\n"
-                    "- ou reformular a pergunta usando termos presentes nos documentos."
-                )
-                
-                # Override prompt content for refusal
-                # Inject personality explicitly in the prompt construction so it overrides default model behavior
-                contents = [{"role": "user", "parts": [{"text": refusal_prompt}]}]
-                generation_config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=500)
-                
-                # Bypass standard flow
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=contents,
-                    config=generation_config
-                )
-                return _parse_ai_response(response.text if response.text else "")
+                refusal_text = _generate_strict_refusal(client, user_message_text, user_defined_prompt, available_doc_names)
+                return _parse_ai_response(refusal_text)
             else:
                 return {'content': "Para responder, preciso que você adicione fontes de estudo (PDFs, Arquivos, Links) ao chat ou espaço de estudo.", 'suggestions': []}
 
@@ -373,16 +380,38 @@ def get_ai_response(
         )
 
         result_data = _parse_ai_response(response.text if response.text else "")
-        
-        # Append Citations Legend if sources were used
+
+        # --- POST-GENERATION GUARDRAIL (STRICT MODE) ---
+        # If strict_context is ON, but response has NO citations, assume hallucination/failure.
+        if strict_context and result_data['content']:
+            has_citation = bool(re.search(r'\[\d+\]', result_data['content']))
+            if not has_citation:
+                logger.warning(f"[Guardrail] Chat {chat_id}: Strict Mode enabled but NO citations found. Triggering refusal.")
+                refusal_text = _generate_strict_refusal(client, user_message_text, user_defined_prompt, available_doc_names)
+                result_data = _parse_ai_response(refusal_text)
+                # Clear citations legend logic triggers below since content changed
+                source_map = {} 
+
+        # Build Sources list for frontend
+        sources_list = []
         if source_map:
-            citations_text = "\n\nFontes:"
-            # Sort by index
-            sorted_sources = sorted(source_map.values(), key=lambda x: x['index'])
-            for s in sorted_sources:
-                citations_text += f"\n[{s['index']}] {s['title']}"
+            # Extract citations actually used in the FINAL text
+            used_indices = set(re.findall(r'\[(\d+)\]', result_data['content']))
             
-            result_data['content'] += citations_text
+            # Map back to source details
+            unique_sources = {}
+            for s_id, s_info in source_map.items():
+                if str(s_info['index']) in used_indices:
+                    if s_id not in unique_sources:
+                        unique_sources[s_id] = {
+                            'id': s_id,
+                            'title': s_info['title'],
+                            'type': 'file', # Default, could be refined if source_map had type
+                            'index': s_info['index']
+                        }
+            
+            sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+            result_data['sources'] = sources_list
 
         # Metrics Logic
         metrics = _calculate_metrics(result_data['content'], available_doc_names)
@@ -486,25 +515,13 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         if strict_context and not doc_contexts:
             if available_docs:
                 logger.info("[Stream] Strict Mode + No Context Found -> Generating Refusal Template")
-                # Generate a strict refusal based on available sources
-                refusal_prompt = (
-                    f"You are a strict knowledge assistant. Your personality is: '{user_defined_prompt}'. "
-                    f"The user asked: '{user_message_text}'. "
-                    f"You searched the following available documents but found NO relevant information: {', '.join(available_docs[:5])}. "
-                    "You MUST output a response following EXACTLY this template, but adopting your personality tone in the placeholders:\n\n"
-                    f"Os documentos fornecidos não contêm informações sobre {user_message_text}.\n\n"
-                    "As fontes disponíveis tratam principalmente de:\n"
-                    "- <Generate a very brief 1-sentence summary of what the filenames imply>\n\n"
-                    "Para que eu possa responder com base nas suas fontes, você pode:\n"
-                    "- adicionar uma fonte que explique esse tema,\n"
-                    "- indicar onde isso aparece (arquivo/página),\n"
-                    "- ou reformular a pergunta usando termos presentes nos documentos."
-                )
+                # Use helper (Sync) to generate refusal, then stream it as a single chunk
+                # Ideally we shouldn't block stream, but refusal is short.
+                refusal_text = _generate_strict_refusal(get_ai_client(), user_message_text, user_defined_prompt, available_docs)
                 
-                # Override prompt content for refusal
-                contents = [{"role": "user", "parts": [{"text": refusal_prompt}]}]
-                # Use a clean config for refusal
-                config = types.GenerateContentConfig(temperature=0.3, max_output_tokens=500)
+                yield f"data: {json.dumps({'type': 'chunk', 'text': refusal_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'message_id': 0, 'clean_content': refusal_text, 'suggestions': []})}\n\n"
+                return
             else:
                 logger.info("[Stream] Strict Mode + No Docs -> Generic Refusal")
                 yield f"data: {json.dumps({'type': 'chunk', 'text': 'Para responder, preciso que você adicione fontes de estudo (PDFs, Arquivos, Links) ao chat ou espaço de estudo.'})}\n\n"
@@ -663,6 +680,20 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
 
         # 3. Salva no Banco de Dados
         if full_clean_content:
+            # --- POST-GENERATION GUARDRAIL (STREAM) ---
+            # If strict mode is ON and no citations found in the FULL content,
+            # we replace the saved message with a refusal to ensure DB integrity/history.
+            # (User might have seen hallucination stream, but reloading fixes it).
+            if strict_context:
+                has_citation = bool(re.search(r'\[\d+\]', full_clean_content))
+                if not has_citation:
+                    logger.warning(f"[Guardrail Stream] Chat {chat_id}: Strict Mode enabled but NO citations found. Saving refusal.")
+                    # Use a new client instance for refusal generation to avoid thread issues if any
+                    refusal_text = _generate_strict_refusal(get_ai_client(), user_message_text, user_defined_prompt, available_docs)
+                    full_clean_content = refusal_text
+                    final_suggestions = [] # Clear suggestions as they might be irrelevant
+                    source_map = {} # Clear citations map
+
             ai_message = ChatMessage.objects.create(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
@@ -679,19 +710,24 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             _save_metrics(ai_message, metrics)
             logger.info(f"[Metrics Stream] {metrics}")
 
-            # 3.1 Append Citations (Stream)
+            # 3.1 Extract Citations for Frontend (Stream)
+            final_sources_list = []
             if source_map:
-                citations_text = "\n\nFontes:"
-                sorted_sources = sorted(source_map.values(), key=lambda x: x['index'])
-                for s in sorted_sources:
-                    citations_text += f"\n[{s['index']}] {s['title']}"
+                used_indices = set(re.findall(r'\[(\d+)\]', full_clean_content))
+                unique_sources = {}
+                for s_id, s_info in source_map.items():
+                    if str(s_info['index']) in used_indices:
+                        if s_id not in unique_sources:
+                            unique_sources[s_id] = {
+                                'id': s_id,
+                                'title': s_info['title'],
+                                'type': 'file',
+                                'index': s_info['index']
+                            }
+                final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
                 
-                full_clean_content += citations_text
-                # Send the citations chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'text': citations_text})}\n\n"
-                
-                # Update DB message
-                ai_message.content = full_clean_content
+                # Save sources to DB
+                ai_message.sources = final_sources_list
                 ai_message.save()
 
             # 4. Envia evento final para o frontend fechar conexão
@@ -699,7 +735,8 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                 'type': 'end',
                 'message_id': ai_message.id,
                 'clean_content': full_clean_content,
-                'suggestions': final_suggestions
+                'suggestions': final_suggestions,
+                'sources': final_sources_list
             }
             yield f"data: {json.dumps(end_payload)}\n\n"
 
@@ -790,6 +827,7 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
 
         ai_text = ai_response_data.get('content', '')
         ai_suggestions = ai_response_data.get('suggestions', [])
+        ai_sources = ai_response_data.get('sources', [])
         audio_path = ai_response_data.get('audio_path')
         duration_ms = ai_response_data.get('duration_ms', 0)
         generated_image_path = ai_response_data.get('generated_image_path')
@@ -800,7 +838,8 @@ def handle_voice_message(chat_id: int, user_audio_file, reply_with_audio: bool, 
             content=ai_text,
             suggestion1=ai_suggestions[0] if len(ai_suggestions) > 0 else None,
             suggestion2=ai_suggestions[1] if len(ai_suggestions) > 1 else None,
-            duration=duration_ms
+            duration=duration_ms,
+            sources=ai_sources
         )
 
         ai_message.save() # Save first to get ID
