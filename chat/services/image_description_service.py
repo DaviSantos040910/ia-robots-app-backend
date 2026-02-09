@@ -42,12 +42,22 @@ class ImageDescriptionService:
                 mime_type = getattr(image_file, 'content_type', 'image/jpeg')
                 image_file.seek(0) # Reset pointer
 
-            # 2. Call Gemini
-            # Using simple content list which SDK converts to Parts automatically
+            # 2. Call Gemini with specific prompt for factual description
+            prompt = """Describe the image factually.
+
+Include:
+- OCR (exact visible text)
+- Objects
+- Scene / context
+- Tables or charts (if any)
+- Keywords
+
+Do not infer or assume information that is not visually present."""
+
             response = self.client.models.generate_content(
                 model='gemini-2.5-flash-lite',
                 contents=[
-                    "Descreva detalhadamente esta imagem para indexação de busca. Inclua todos os textos visíveis (OCR), descreva gráficos, tabelas, objetos, contexto, cores e relações espaciais. Seja factual e específico.",
+                    prompt,
                     types.Part.from_bytes(data=img_data, mime_type=mime_type)
                 ]
             )

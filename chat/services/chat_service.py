@@ -810,7 +810,7 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                 full_clean_content += buffer
                 yield f"data: {json.dumps({'type': 'chunk', 'text': buffer})}\n\n"
 
-            # Parse Suggestions
+            # Parse Suggestions (with fallback for mid-stream hallucination)
             final_suggestions = []
             if suggestions_json_str:
                 try:
@@ -819,7 +819,16 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                     parsed = json.loads(s_json)
                     if isinstance(parsed, list):
                         final_suggestions = [str(s) for s in parsed][:3]
-                except: pass
+                    else:
+                        raise ValueError("Not a list")
+                except Exception:
+                    # Fallback: If parsing fails, it was likely hallucinated text in the middle.
+                    # We append the separator and the raw text back to content.
+                    logger.warning("[Stream] Suggestion parsing failed, treating as normal text.")
+                    recovered_text = SEPARATOR + suggestions_json_str
+                    full_clean_content += recovered_text
+                    # Yield the recovered text so the user sees it
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': recovered_text})}\n\n"
 
             # Extract Sources (Standard Flow)
             final_sources_list = []
