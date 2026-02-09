@@ -55,8 +55,8 @@ class StreamLogicTest(TestCase):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Execute
-        stream = process_message_stream(self.user.id, self.chat.id, "Question?")
+        # Execute (Use PT question to trigger PT refusal)
+        stream = process_message_stream(self.user.id, self.chat.id, "Qual a cor?")
         events = self._consume_stream(stream)
 
         # Verify
@@ -71,11 +71,12 @@ class StreamLogicTest(TestCase):
         end_event = events[-1]
         self.assertEqual(end_event['type'], 'end')
         self.assertNotEqual(end_event['message_id'], 0) # Must have real ID
-        self.assertIn("Os documentos fornecidos não contêm informações sobre", end_event['clean_content'])
+        # "Qual" triggers PT detection
+        self.assertIn("Não encontrei essa informação", end_event['clean_content'])
 
         # Verify DB
         msg = ChatMessage.objects.get(id=end_event['message_id'])
-        self.assertIn("Os documentos fornecidos não contêm informações sobre", msg.content)
+        self.assertIn("Não encontrei essa informação", msg.content)
         self.assertEqual(msg.role, 'assistant')
 
     @patch('chat.services.chat_service.vector_service.search_context')
@@ -135,9 +136,9 @@ class StreamLogicTest(TestCase):
         """
         3. Strict ON + Context + NO Citation (Hallucination)
         Expected:
-        - Call generate_content (SYNC)
+        - Call generate_content (SYNC) ONCE (for the hallucination)
         - Detect missing citation
-        - Call refusal helper (SYNC) - Note: The helper DOES call model for polite refusal of hallucination
+        - FALLBACK to deterministic refusal (ZERO calls for refusal)
         - Pseudo-stream refusal
         - Save refusal
         """
@@ -155,29 +156,27 @@ class StreamLogicTest(TestCase):
         response_hallucination = MagicMock()
         response_hallucination.text = "This is a fact without citation."
 
-        # Mock Refusal Response (from helper)
-        response_refusal = MagicMock()
-        response_refusal.text = "Refusal Message."
-
-        # Side Effect: First call returns hallucination, second call (helper) returns refusal
-        mock_client.models.generate_content.side_effect = [response_hallucination, response_refusal]
+        # We only set ONE return value because the refusal is now deterministic
+        mock_client.models.generate_content.return_value = response_hallucination
 
         # Execute
         stream = process_message_stream(self.user.id, self.chat.id, "Question?")
         events = self._consume_stream(stream)
 
         # Verify
-        # Should call SYNC twice (Once for answer, Once for refusal)
-        self.assertEqual(mock_client.models.generate_content.call_count, 2)
+        # Should call SYNC ONCE
+        self.assertEqual(mock_client.models.generate_content.call_count, 1)
 
         # Check Chunks (Pseudo-stream of REFUSAL)
         chunk_events = [e for e in events if e['type'] == 'chunk']
         full_text = "".join([e['text'] for e in chunk_events])
-        self.assertEqual(full_text, "Refusal Message.")
+
+        # Refusal text should be in English (default) as "Question?" is ambiguous/EN
+        self.assertIn("I couldn’t find this information", full_text)
 
         # Check End Event
         end_event = events[-1]
-        self.assertEqual(end_event['clean_content'], "Refusal Message.")
+        self.assertIn("I couldn’t find this information", end_event['clean_content'])
         self.assertEqual(end_event['sources'], []) # No sources for refusal
 
     @patch('chat.services.chat_service.vector_service.search_context')
