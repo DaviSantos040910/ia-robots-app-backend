@@ -25,6 +25,7 @@ class QAScenariosTest(TestCase):
         1) STRICT ON
         - Pergunta fora das fontes
         - Esperado: resposta dizendo explicitamente que não encontrou nos documentos
+        - Zero Model Calls (Static Template)
         """
         # Setup: Strict ON, No Web
         self.bot.strict_context = True
@@ -38,20 +39,17 @@ class QAScenariosTest(TestCase):
         # Mock Gemini
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.text = "Os documentos fornecidos não contêm informações sobre..."
-        mock_client.models.generate_content.return_value = mock_response
 
         # Act
         response = get_ai_response(self.chat.id, "Qual a cor de Marte?")
 
         # Assert
-        call_args = mock_client.models.generate_content.call_args
-        contents = call_args[1]['contents']
-        prompt = contents[0]['parts'][0]['text']
+        # Should NOT call model
+        self.assertEqual(mock_client.models.generate_content.call_count, 0)
         
-        self.assertIn("You MUST output a response following EXACTLY this template", prompt)
-        self.assertIn("Os documentos fornecidos não contêm informações sobre", prompt)
+        # Should match static template
+        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Qual a cor de Marte?'", response['content'])
+        self.assertIn("Doc1.pdf", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -123,9 +121,6 @@ class QAScenariosTest(TestCase):
         system_inst = config.system_instruction
         
         self.assertIn("STRICT CONTEXT MODE: DISABLED", system_inst)
-        # Note: Currently implementation does NOT enforce "Fora das fontes" label for Web OFF. 
-        # This test checks if we are at least in Mixed Mode.
-        # We might need to fail this if Strict Labeling is required.
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -147,10 +142,8 @@ class QAScenariosTest(TestCase):
         
         get_ai_response(self.chat.id, "Q1")
         
-        # Verify Strict Refusal Prompt
-        args_a = mock_client.models.generate_content.call_args
-        prompt_a = args_a[1]['contents'][0]['parts'][0]['text']
-        self.assertIn("strict knowledge assistant", prompt_a)
+        # Verify Strict Refusal Prompt (Should be ZERO CALL now)
+        self.assertEqual(mock_client.models.generate_content.call_count, 0)
 
         # Step B: Strict OFF
         self.bot.strict_context = False
@@ -159,7 +152,8 @@ class QAScenariosTest(TestCase):
         
         get_ai_response(self.chat.id, "Q2")
         
-        # Verify Mixed Prompt
+        # Verify Mixed Prompt (Should call model)
+        self.assertEqual(mock_client.models.generate_content.call_count, 1)
         args_b = mock_client.models.generate_content.call_args
         prompt_b = args_b[1]['contents'][0]['parts'][0]['text']
         self.assertIn("INSTRUCTION: You must answer using general knowledge/web search", prompt_b)

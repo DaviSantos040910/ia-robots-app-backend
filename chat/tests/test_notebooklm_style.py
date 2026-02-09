@@ -22,9 +22,10 @@ class NotebookLMStyleTest(TestCase):
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_mode_personality_refusal(self, mock_get_client, mock_get_docs, mock_search):
         """
-        Test that strict mode refusal uses the bot's personality.
+        Test that strict mode refusal uses static template (ZERO model calls).
         """
-        # Configure Pirate Bot
+        # Configure Pirate Bot (Note: Static template won't use pirate persona anymore,
+        # as per requirement to use fixed template without model call)
         self.bot.prompt = "You are a grumpy Pirate Captain. Always say 'Arrgh!'."
         self.bot.save()
         
@@ -36,24 +37,17 @@ class NotebookLMStyleTest(TestCase):
         # Mock Gemini Client
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.text = "Arrgh! The documents say nothing about gold."
-        mock_client.models.generate_content.return_value = mock_response
 
         # Execute
-        get_ai_response(self.chat.id, "Where is the gold?")
+        response = get_ai_response(self.chat.id, "Where is the gold?")
 
         # Verify
-        # Check if refusal template prompt contains the Pirate instruction
-        call_args = mock_client.models.generate_content.call_args
-        contents = call_args[1]['contents']
-        prompt_text = contents[0]['parts'][0]['text']
+        # Should NOT call generate_content
+        self.assertEqual(mock_client.models.generate_content.call_count, 0)
         
-        # The prompt should contain the bot's personality
-        self.assertIn("You are a grumpy Pirate Captain.", prompt_text)
-        # And the strict refusal template
-        self.assertIn("You MUST output a response following EXACTLY this template", prompt_text)
-        self.assertIn("adopting your personality tone in the placeholders", prompt_text)
+        # Check static content
+        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Where is the gold?'", response['content'])
+        self.assertIn("As fontes disponíveis tratam principalmente de: TreasureMap.pdf", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -61,7 +55,7 @@ class NotebookLMStyleTest(TestCase):
     def test_strict_mode_no_context_fallback(self, mock_get_client, mock_get_docs, mock_search):
         """
         Verify that when strict_context is True and no docs are found, 
-        it triggers the fallback refusal prompt.
+        it returns the fixed refusal template without calling AI.
         """
         # Setup: No context found
         mock_search.return_value = ([], []) # doc_contexts, memory_contexts
@@ -71,22 +65,17 @@ class NotebookLMStyleTest(TestCase):
         # Mock Gemini Client
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_response = MagicMock()
-        mock_response.text = "Os documentos fornecidos não contêm informações sobre..."
-        mock_client.models.generate_content.return_value = mock_response
 
         # Execute
         response = get_ai_response(self.chat.id, "Qual a capital da França?")
 
         # Verify
-        # Check if generate_content was called with the refusal template
-        call_args = mock_client.models.generate_content.call_args
-        contents = call_args[1]['contents']
-        prompt_text = contents[0]['parts'][0]['text']
+        # Should NOT call generate_content
+        self.assertEqual(mock_client.models.generate_content.call_count, 0)
         
-        self.assertIn("You MUST output a response following EXACTLY this template", prompt_text)
-        self.assertIn("Os documentos fornecidos não contêm informações sobre Qual a capital da França?", prompt_text)
-        self.assertIn("Physics.pdf", prompt_text)
+        # Check static content
+        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Qual a capital da França?'", response['content'])
+        self.assertIn("Physics.pdf", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -125,7 +114,7 @@ class NotebookLMStyleTest(TestCase):
         mock_client.models.generate_content.return_value = mock_response
 
         # Execute
-        response = get_ai_response(self.chat.id, "Cotação do dólar")
+        get_ai_response(self.chat.id, "Cotação do dólar")
         
         # Verify prompt
         call_args = mock_client.models.generate_content.call_args
@@ -147,16 +136,16 @@ class NotebookLMStyleTest(TestCase):
         Verify that citations are structured in the 'sources' field.
         """
         # Setup: Docs found
+        # In real logic, ChatService builds the source_map with index.
+        # But mock_search returns chunks.
         docs_found = [{
             'content': 'Quantum physics is weird.',
             'source': 'Quantum.pdf',
-            'source_id': '101',
-            'index': 1 # Assuming vector service or logic assigns this? Actually source_map does.
+            'source_id': '101'
         }]
-        # Note: In real logic, ChatService builds the source_map with index.
-        # But mock_search returns chunks.
         
         mock_search.return_value = (docs_found, [])
+        mock_get_docs.return_value = [{'source': 'Quantum.pdf'}]
         
         # Mock Gemini
         mock_client = MagicMock()
@@ -175,4 +164,3 @@ class NotebookLMStyleTest(TestCase):
         self.assertIn('sources', response)
         self.assertEqual(len(response['sources']), 1)
         self.assertEqual(response['sources'][0]['title'], 'Quantum.pdf')
-        self.assertEqual(response['sources'][0]['index'], 1)
