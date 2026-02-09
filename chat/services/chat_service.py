@@ -115,11 +115,10 @@ def _calculate_metrics(response_text: str, context_sources: list) -> dict:
 
     # 2. Detectar padrões explícitos de citação se nenhum nome encontrado
     if not has_citation:
-        citation_patterns = [r'\[DOCUMENTO:', r'De acordo com', r'No documento', r'Segundo o arquivo']
-        for pattern in citation_patterns:
-            if re.search(pattern, response_text, re.IGNORECASE):
-                has_citation = True
-                break
+        # Strict validation: Only accept [n] format.
+        # Legacy patterns like [Fonte n] or text references are NOT valid citations for metrics.
+        if re.search(r'\[\d+\]', response_text):
+            has_citation = True
 
     return {
         'sources_count': len(unique_sources),
@@ -298,8 +297,8 @@ def get_ai_response(
                 s_idx = source_map[s_id]['index']
                 used_source_indices.append(s_idx)
                 
-                # Format: [1] (Title): Content
-                formatted_doc_contexts.append(f"[Fonte {s_idx}] ({s_title}):\n{chunk['content']}")
+                # Format: [1] Title\nContent
+                formatted_doc_contexts.append(f"[{s_idx}] {s_title}\n{chunk['content']}")
 
             logger.info(f"[Context] Sources Mapped: {source_map}")
 
