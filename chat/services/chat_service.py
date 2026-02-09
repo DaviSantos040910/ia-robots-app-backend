@@ -320,7 +320,7 @@ def get_ai_response(
         # --- Strict Mode Fallback Logic (NotebookLM Style) ---
         if strict_context and not doc_contexts:
             if available_doc_names:
-                logger.info("[Sync] Strict Mode + No Context Found -> Refusal")
+                logger.info("[Sync] Strict Mode + No Context Found -> Generating Refusal Template")
                 refusal_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=True)
                 return _parse_ai_response(refusal_text)
             else:
@@ -446,7 +446,13 @@ def get_ai_response(
                             'index': s_info['index']
                         }
             
-            sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+            # Safely create the list
+            try:
+                sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+            except Exception as e:
+                logger.error(f"[Sources Error] Failed to process sources list: {e}")
+                sources_list = []
+
             result_data['sources'] = sources_list
 
         # Metrics Logic
@@ -641,7 +647,12 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                                 'type': 'file',
                                 'index': s_info['index']
                             }
-                final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+                # Safe processing of sources list
+                try:
+                    final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+                except Exception as e:
+                    logger.error(f"[Stream Sources Error] Failed to process sources list: {e}")
+                    final_sources_list = []
 
             # Save Message
             ai_message = ChatMessage.objects.create(
@@ -754,8 +765,9 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
 
                     total_so_far = full_clean_content + text_part
 
-                    # Logic: Only valid if it appears after the delimiter `\n\n---\n` which is injected by prompt
-                    is_valid_position = "\n\n---\n" in total_so_far
+                    # Logic: We trust the unique separator token.
+                    # Checking for \n\n---\n is risky if model doesn't echo it.
+                    is_valid_position = True
 
                     if is_valid_position:
                          # Valid Separator
@@ -823,7 +835,12 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                                 'type': 'file',
                                 'index': s_info['index']
                             }
-                final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+                # Safe processing of sources list
+                try:
+                    final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
+                except Exception as e:
+                    logger.error(f"[Stream Sources Error] Failed to process sources list: {e}")
+                    final_sources_list = []
 
             # Save
             ai_message = ChatMessage.objects.create(

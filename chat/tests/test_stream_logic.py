@@ -247,11 +247,11 @@ class StreamLogicTest(TestCase):
     @patch('chat.services.chat_service.vector_service.get_available_documents')
     @patch('chat.services.chat_service.generate_content_stream')
     @patch('chat.services.chat_service.get_ai_client')
-    def test_suggestions_parsing_invalid(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):
+    def test_suggestions_parsing_valid_trust(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):
         """
-        6. Suggestion Parsing Safety (Invalid)
-        - Marker present but NO preceding \n\n---\n
-        - Should be treated as plain text
+        6. Suggestion Parsing Safety (Trust Unique Token)
+        - If unique separator is found, we assume it is valid and consume suggestions.
+        - Previous 'invalid' test is removed/updated because we now TRUST the token.
         """
         self.bot.strict_context = False
         self.bot.save()
@@ -259,14 +259,14 @@ class StreamLogicTest(TestCase):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Case B: INVALID suggestions (middle of text, no delimiter)
-        # This simulates a model hallucinating the separator inline
-        mock_stream_iterator = iter(["Some text ", "|||SUGGESTIONS|||", " more text."])
+        # Case B: Token found -> Should parse suggestions
+        # Even if not preceded by ---, we trust the model outputting the specific token
+        mock_stream_iterator = iter(["Some text ", "|||SUGGESTIONS|||", '["Sug1"]'])
         mock_generate_stream.return_value = mock_stream_iterator
 
         stream = process_message_stream(self.user.id, self.chat.id, "Q")
         events = self._consume_stream(stream)
 
         end_event = events[-1]
-        self.assertEqual(end_event['suggestions'], []) # Should be empty
-        self.assertIn("|||SUGGESTIONS|||", end_event['clean_content']) # Should be in text
+        self.assertEqual(end_event['suggestions'], ['Sug1'])
+        self.assertEqual(end_event['clean_content'], "Some text ")
