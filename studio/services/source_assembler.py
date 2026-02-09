@@ -17,10 +17,11 @@ class SourceAssemblyService:
     def get_context_from_config(chat_id: int, config: dict, query: str = "") -> str:
         """
         Reúne trechos relevantes (RAG) dos arquivos selecionados.
+        IGNORA EXPLICITAMENTE O HISTÓRICO DO CHAT.
 
         Args:
             chat_id: ID do chat.
-            config: Dicionário contendo selectedSourceIds e includeChatHistory.
+            config: Dicionário contendo selectedSourceIds e includeChatHistory (ignorado).
             query: Tópico/Título do artefato para guiar a busca vetorial.
 
         Returns:
@@ -28,6 +29,10 @@ class SourceAssemblyService:
         """
         context_parts = []
         current_tokens = 0
+
+        # Log de conformidade
+        if config.get('includeChatHistory'):
+            logger.debug(f"[Artifact Generation] Chat history explicitly IGNORED/REMOVED from context assembly for chat {chat_id}.")
 
         try:
             chat = Chat.objects.select_related('bot').get(id=chat_id)
@@ -50,21 +55,12 @@ class SourceAssemblyService:
                             source.save(update_fields=['extracted_text'])
                             
                             # Lazy Indexing Logic
-                            # Determine permissions based on where this source is used
-                            # Check if source belongs to any of the bot's study spaces
                             bot_study_spaces = set(chat.bot.study_spaces.values_list('id', flat=True)) if chat.bot else set()
                             source_study_spaces = set(source.study_spaces.values_list('id', flat=True))
                             
                             common_spaces = bot_study_spaces.intersection(source_study_spaces)
                             
                             target_study_space_id = list(common_spaces)[0] if common_spaces else None
-                            # If not in a shared space, index as private bot context if strictly linked?
-                            # Or default to user library (bot_id=0)?
-                            # Safer to index as User Library (0) so it's broadly available if permissions allow,
-                            # OR explicitly for this bot if we consider it "uploaded to chat".
-                            # Given this is a fallback, let's stick to the safest retrieval path:
-                            # If we index it here, we want `search_context` below to find it.
-                            # `search_context` looks for `bot_id=chat.bot.id` OR `study_space_id=...`.
                             
                             target_bot_id = chat.bot.id if not target_study_space_id else None
                             
@@ -74,7 +70,7 @@ class SourceAssemblyService:
                                 chunks=chunks,
                                 source_name=source.title,
                                 source_id=source.id,
-                                bot_id=target_bot_id, # Use specific bot ID if no space match
+                                bot_id=target_bot_id,
                                 study_space_id=target_study_space_id
                             )
                     except Exception as e:
@@ -98,6 +94,10 @@ class SourceAssemblyService:
                 for chunk in doc_contexts:
                     title = chunk.get('source', 'Documento')
                     content = chunk.get('content', '')
+                    # Format matching standardized citation style
+                    s_idx = chunk.get('source_id', '?') # Just ID or index? Vector service returns meta
+                    # Ideally we want an index 1..N relative to this list, but RAG returns arbitrary chunks.
+                    # Simple format: [Source: Title] Content
                     formatted_chunks.append(f"[Source: {title}]\n{content}")
                 
                 rag_content = "\n\n".join(formatted_chunks)
@@ -106,29 +106,13 @@ class SourceAssemblyService:
                 context_parts.append("## TRECHOS RELEVANTES DOS DOCUMENTOS SELECIONADOS\n")
                 context_parts.append(rag_content)
                 current_tokens += rag_tokens
+
+                logger.info(f"[Artifact Context] Built {current_tokens} tokens from sources: {clean_ids}")
             else:
                 context_parts.append("[Nenhum trecho relevante encontrado nos arquivos selecionados para este tópico.]")
 
-        # 2. Process Chat History (if requested)
-        if config.get('includeChatHistory'):
-            try:
-                # Reuse context builder to get linear history
-                _, recent_texts = build_conversation_history(chat_id, limit=30)
-                if recent_texts:
-                    history_text = "\n".join(recent_texts)
-                    hist_tokens = TokenService.estimate_tokens(history_text)
-
-                    if current_tokens + hist_tokens <= SourceAssemblyService.MAX_CONTEXT_TOKENS:
-                        context_parts.append(f"\n--- CHAT HISTORY ---\n{history_text}")
-                        current_tokens += hist_tokens
-                    else:
-                        # Truncate if needed
-                        space_left = SourceAssemblyService.MAX_CONTEXT_TOKENS - current_tokens
-                        if space_left > 500:
-                             truncated = TokenService.truncate_to_token_limit(history_text, space_left)
-                             context_parts.append(f"\n--- CHAT HISTORY (Partial) ---\n{truncated}")
-                             current_tokens += space_left
-            except Exception as e:
-                logger.error(f"Error appending chat history: {e}")
+        # 2. CHAT HISTORY REMOVED
+        # O código antigo que concatenava histórico foi removido para garantir
+        # que o artefato é gerado exclusivamente a partir das fontes.
 
         return "\n".join(context_parts)
