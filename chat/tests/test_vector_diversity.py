@@ -38,9 +38,9 @@ class VectorDiversityTest(TestCase):
         results = self.service._search_general("query", 1, 1, limit=3)
 
         self.assertEqual(len(results), 3)
-        self.assertTrue(any("Doc A" in r for r in results))
-        self.assertTrue(any("Doc B" in r for r in results))
-        self.assertTrue(any("Doc C" in r for r in results))
+        self.assertTrue(any(r['source'] == "Doc A" for r in results))
+        self.assertTrue(any(r['source'] == "Doc B" for r in results))
+        self.assertTrue(any(r['source'] == "Doc C" for r in results))
 
     def test_search_general_limit_per_doc(self):
         """Testa se o limite por documento é respeitado (Max 2)."""
@@ -53,7 +53,7 @@ class VectorDiversityTest(TestCase):
                 {'source': 'Doc A'}, {'source': 'Doc A'}, {'source': 'Doc A'},
                 {'source': 'Doc A'}, {'source': 'Doc A'}, {'source': 'Doc B'}
             ]],
-            'distances': [[0.1, 0.11, 0.12, 0.13, 0.14, 0.9]]
+            'distances': [[0.1, 0.11, 0.12, 0.13, 0.14, 0.2]]
         }
         self.service.collection.query.return_value = mock_results
 
@@ -72,8 +72,8 @@ class VectorDiversityTest(TestCase):
         results = self.service._search_general("query", 1, 1, limit=4)
 
         # Check counts
-        a_count = sum(1 for r in results if "Doc A" in r)
-        b_count = sum(1 for r in results if "Doc B" in r)
+        a_count = sum(1 for r in results if r['source'] == "Doc A")
+        b_count = sum(1 for r in results if r['source'] == "Doc B")
 
         self.assertEqual(b_count, 1)
         self.assertEqual(a_count, 2) # Max 2 enforced
@@ -100,4 +100,4 @@ class VectorDiversityTest(TestCase):
 
         results = self.service._search_general("query", 1, 1, limit=3)
         self.assertEqual(len(results), 1)
-        self.assertIn("Doc A", results[0])
+        self.assertEqual(results[0]['source'], "Doc A")

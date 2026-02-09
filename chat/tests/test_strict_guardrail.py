@@ -88,7 +88,9 @@ class StrictGuardrailTest(TestCase):
         # Verify
         # Should contain original text AND the appended legend
         self.assertIn("Paris is the capital [1].", result['content'])
-        self.assertIn("Fontes:", result['content'])
+        # The frontend uses structured sources now, not appended text.
+        self.assertTrue(result['sources'])
+        self.assertEqual(result['sources'][0]['id'], '1')
         
         # Verify called only once
         self.assertEqual(mock_client.models.generate_content.call_count, 1)

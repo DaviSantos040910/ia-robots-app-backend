@@ -122,7 +122,7 @@ class QAScenariosTest(TestCase):
         config = call_args[1]['config']
         system_inst = config.system_instruction
         
-        self.assertIn("MODO DE CONHECIMENTO MISTO", system_inst)
+        self.assertIn("STRICT CONTEXT MODE: DISABLED", system_inst)
         # Note: Currently implementation does NOT enforce "Fora das fontes" label for Web OFF. 
         # This test checks if we are at least in Mixed Mode.
         # We might need to fail this if Strict Labeling is required.

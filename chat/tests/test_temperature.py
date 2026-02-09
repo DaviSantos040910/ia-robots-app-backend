@@ -18,7 +18,8 @@ class TemperatureLogicTest(TestCase):
     def test_temperature_with_rag(self, mock_context, mock_client):
         """Testa se a temperatura baixa quando há contexto documental."""
         # Setup mocks
-        mock_context.return_value = (["[DOC] Chunk 1"], [], ["File1.pdf"]) # doc_contexts is NOT empty
+        doc_chunk = {'content': "Chunk 1", 'source': 'File1.pdf', 'source_id': 'f1'}
+        mock_context.return_value = ([doc_chunk], [], ["File1.pdf"]) # doc_contexts is NOT empty
         mock_gen_model = MagicMock()
         mock_client.return_value.models = mock_gen_model
         mock_gen_model.generate_content.return_value.text = "Response"
