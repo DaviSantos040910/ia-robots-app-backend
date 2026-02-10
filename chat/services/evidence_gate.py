@@ -18,7 +18,7 @@ class EvidenceGate:
     @staticmethod
     def evaluate(doc_contexts: List[Dict], threshold_strict: float = 0.45) -> Tuple[EvidenceDecision, str]:
         """
-        Avalia a qualidade do contexto retornado.
+        Avalia a qualidade do contexto retornado com 2 thresholds e regras de zona cinzenta.
 
         Args:
             doc_contexts: Lista de chunks com 'score' (distância cosine, menor é melhor).
@@ -27,62 +27,94 @@ class EvidenceGate:
         Returns:
             (Decision, Reason)
         """
+        # 1. Se doc_contexts vazio -> REFUSE
         if not doc_contexts:
             return EvidenceDecision.REFUSE, "no_context"
 
-        # 1. Extrair métricas
-        scores = [d.get('score', 1.0) for d in doc_contexts]
-        best_score = min(scores)
-        unique_sources = len(set(d.get('source_id') for d in doc_contexts))
+        # 2. Extrair métricas (PRÉ-CÁLCULOS)
+        # Assumindo que 'score' é a distância (menor é melhor)
+        # Se não tiver score, assume 1.0 (pior caso)
+        distances = [d.get('score', 1.0) for d in doc_contexts]
 
-        # Média dos top 4 (ou menos)
-        top_k = scores[:4]
-        avg_score = sum(top_k) / len(top_k) if top_k else 1.0
+        # k = min(len(distances), 4)
+        k = min(len(distances), 4)
 
-        # Gap entre melhor e segundo melhor
-        gap = 0.0
-        if len(scores) > 1:
-            sorted_scores = sorted(scores)
-            gap = sorted_scores[1] - sorted_scores[0]
+        # best = min(distances)
+        best = min(distances) if distances else 1.0
 
-        # 2. Definir Limites Dinâmicos
-        # T_answer: Se for melhor que isso, responde seguro.
-        T_answer = threshold_strict * 0.92
+        # second = segundo menor se existir senão None
+        # distances might not be sorted, so sort them first
+        sorted_distances = sorted(distances)
+        second = sorted_distances[1] if len(sorted_distances) > 1 else None
 
-        # T_refuse: Se for pior que isso, recusa direto.
-        T_refuse = threshold_strict * 1.08
+        # avg_topk = média das k menores distâncias
+        top_k_distances = sorted_distances[:k]
+        avg_topk = sum(top_k_distances) / len(top_k_distances) if top_k_distances else 1.0
 
-        reason_debug = f"best={best_score:.3f}, avg={avg_score:.3f}, gap={gap:.3f}, uniq={unique_sources}, T_ans={T_answer:.3f}, T_ref={T_refuse:.3f}"
+        # gap = (second - best) se second existir senão None (use 0.0 or handle in logic)
+        gap = (second - best) if second is not None else 0.0
 
-        # 3. Árvore de Decisão
+        # unique_sources = número de source_id distintos nos top k
+        # We need to map back to contexts to find source_ids of top k
+        # Create (dist, context) pairs and sort
+        scored_contexts = []
+        for d in doc_contexts:
+            scored_contexts.append((d.get('score', 1.0), d))
+        scored_contexts.sort(key=lambda x: x[0])
 
-        # A) Zona Clara de Resposta
-        if best_score <= T_answer:
-            return EvidenceDecision.ANSWER, f"strong_match ({reason_debug})"
+        top_k_contexts = [ctx for _, ctx in scored_contexts[:k]]
+        unique_sources = len(set(ctx.get('source_id') for ctx in top_k_contexts))
 
-        # B) Zona Clara de Recusa
-        if best_score >= T_refuse:
-            return EvidenceDecision.REFUSE, f"weak_match ({reason_debug})"
+        # top_text_len = len(text do chunk com best) (após strip)
+        best_context = scored_contexts[0][1] # Since we sorted, first is best
+        top_text_len = len(best_context.get('content', '').strip())
 
-        # C) Zona Cinzenta (Gray Zone)
-        # Tenta salvar se houver robustez (várias fontes ou consistência)
+        # 3. THRESHOLDS (valores iniciais melhores)
+        # T_answer = threshold_strict * 1.02
+        T_answer = threshold_strict * 1.02
 
-        # C.1) Várias fontes concordam (heurística: se trouxe chunks de 2+ docs, provavelmente é um tema recorrente)
+        # T_refuse = threshold_strict * 1.18
+        T_refuse = threshold_strict * 1.18
+
+        reason_debug = (
+            f"best={best:.3f}, avg={avg_topk:.3f}, gap={gap:.3f}, "
+            f"uniq={unique_sources}, len={top_text_len}, "
+            f"T_ans={T_answer:.3f}, T_ref={T_refuse:.3f}"
+        )
+
+        # LOGS (controlados)
+        logger.info(f"[EvidenceGate] Eval: {reason_debug}")
+
+        # 4. DECISÃO (DETERMINÍSTICA)
+
+        # 2) Se best <= T_answer: ANSWER
+        if best <= T_answer:
+            return EvidenceDecision.ANSWER, f"best<=T_answer ({reason_debug})"
+
+        # 3) Se best >= T_refuse: REFUSE
+        if best >= T_refuse:
+            return EvidenceDecision.REFUSE, f"best>=T_refuse ({reason_debug})"
+
+        # 4) ZONA CINZENTA (T_answer < best < T_refuse)
+
+        # 4.1) Se unique_sources >= 2: ANSWER
         if unique_sources >= 2:
-            return EvidenceDecision.ANSWER, f"gray_zone_multi_source ({reason_debug})"
+            return EvidenceDecision.ANSWER, f"multi_source_support ({reason_debug})"
 
-        # C.2) Texto muito curto (falso positivo comum em headers/footers)
-        first_chunk_len = len(doc_contexts[0].get('content', ''))
-        if first_chunk_len < 200:
-            return EvidenceDecision.REFUSE, f"gray_zone_short_text ({reason_debug})"
+        # 4.2) Se top_text_len < 220: REFUSE
+        if top_text_len < 220:
+             return EvidenceDecision.REFUSE, f"top_chunk_too_short ({reason_debug})"
 
-        # C.3) Consistência (gap pequeno e média aceitável)
-        # Se avg está dentro do threshold original e os chunks são parecidos (gap baixo)
-        if avg_score <= threshold_strict and gap <= 0.03:
-            return EvidenceDecision.ANSWER, f"gray_zone_consistent ({reason_debug})"
+        # 4.3) Se avg_topk <= threshold_strict * 1.10: ANSWER
+        if avg_topk <= (threshold_strict * 1.10):
+            return EvidenceDecision.ANSWER, f"avg_topk_good ({reason_debug})"
 
-        # C.4) Incerteza (Default Refuse ou Uncertain para tratamento posterior)
-        # Por segurança no strict mode, default é REFUSE se não caiu nas exceções acima.
-        return EvidenceDecision.REFUSE, f"gray_zone_fallback ({reason_debug})"
+        # 4.4) Se gap existe e gap <= 0.035: ANSWER
+        # Check gap condition only if second exists (implied by gap logic usually, but let's be safe)
+        if second is not None and gap <= 0.035:
+             return EvidenceDecision.ANSWER, f"small_gap_consistent ({reason_debug})"
+
+        # 4.5) Caso contrário: UNCERTAIN
+        return EvidenceDecision.UNCERTAIN, f"gray_zone_uncertain ({reason_debug})"
 
 evidence_gate = EvidenceGate()
