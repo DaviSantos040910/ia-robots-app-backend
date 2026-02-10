@@ -3,9 +3,9 @@ import requests
 import re
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
-from youtube_transcript_api import YouTubeTranscriptApi
 import trafilatura
 from chat.file_processor import FileProcessor
+from chat.services.youtube_service import YouTubeService
 
 logger = logging.getLogger(__name__)
 
@@ -45,66 +45,9 @@ class ContentExtractor:
     @staticmethod
     def extract_from_youtube(url: str) -> str:
         """
-        Extracts transcript from a YouTube video.
+        Extracts transcript from a YouTube video via YouTubeService.
         """
-        try:
-            video_id = ContentExtractor._get_youtube_video_id(url)
-            if not video_id:
-                return "Erro: Não foi possível identificar o ID do vídeo."
-
-            # Tries to get transcript in Portuguese, then English
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-            try:
-                transcript = transcript_list.find_transcript(['pt', 'pt-BR'])
-            except:
-                try:
-                    transcript = transcript_list.find_transcript(['en'])
-                except:
-                    # Fallback to whatever is available
-                    transcript = transcript_list.find_generated_transcript(['pt', 'en'])
-
-            # Fetch the actual transcript data
-            data = transcript.fetch()
-
-            # Combine text
-            full_text = " ".join([item['text'] for item in data])
-            return full_text
-
-        except Exception as e:
-            logger.warning(f"YouTubeTranscriptApi failed for {url}: {e}. Trying fallback with Gemini...")
-
-            # Import here to avoid circular dependencies if any
-            from chat.services.transcription_service import transcribe_youtube_video
-
-            result = transcribe_youtube_video(url)
-            if result.get('success'):
-                return result.get('transcription', '')
-            else:
-                return f"Erro ao processar vídeo do YouTube (Fallback): {result.get('error')}"
-
-    @staticmethod
-    def _get_youtube_video_id(url: str) -> str:
-        """
-        Parses video ID from various YouTube URL formats.
-        """
-        parsed = urlparse(url)
-        if parsed.netloc == 'youtu.be':
-            return parsed.path[1:]
-        if parsed.path == '/watch':
-            try:
-                return parse_qs(parsed.query)['v'][0]
-            except KeyError:
-                return None
-        if parsed.path.startswith('/embed/'):
-            return parsed.path.split('/')[2]
-        if parsed.path.startswith('/v/'):
-            return parsed.path.split('/')[2]
-        # Shorts
-        if parsed.path.startswith('/shorts/'):
-            return parsed.path.split('/')[2]
-
-        return None
+        return YouTubeService.get_transcript(url)
 
     @staticmethod
     def extract_from_webpage(url: str) -> str:

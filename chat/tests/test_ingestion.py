@@ -5,7 +5,7 @@ import os
 
 from chat.services.content_extractor import ContentExtractor
 from chat.file_processor import FileProcessor
-from chat.services.transcription_service import transcribe_youtube_video
+from chat.services.youtube_service import YouTubeService
 
 class TestIngestion(SimpleTestCase):
 
@@ -84,42 +84,45 @@ class TestIngestion(SimpleTestCase):
 
     # --- Testes do YouTube (Fallback para Audio) ---
 
-    @patch('chat.services.content_extractor.YouTubeTranscriptApi')
-    @patch('chat.services.transcription_service.transcribe_youtube_video')
-    def test_extract_from_youtube_fallback_trigger(self, mock_transcribe_video, mock_yt_api):
-        """Testa se o fallback para transcribe_youtube_video é acionado quando a API de transcrição falha."""
-        # Simula falha na API oficial
-        mock_yt_api.list_transcripts.side_effect = Exception("No transcripts")
-
-        mock_transcribe_video.return_value = {'success': True, 'transcription': 'Audio Transcription'}
+    @patch('chat.services.content_extractor.YouTubeService.get_transcript')
+    def test_extract_from_youtube_delegation(self, mock_get_transcript):
+        """Testa se ContentExtractor delega corretamente para YouTubeService."""
+        mock_get_transcript.return_value = "Delegated Transcript"
 
         url = "https://www.youtube.com/watch?v=12345"
         result = ContentExtractor.extract_from_youtube(url)
 
-        self.assertEqual(result, "Audio Transcription")
-        # Como o import é local e mockamos no source, verificamos se o mock foi chamado
-        mock_transcribe_video.assert_called_with(url)
+        self.assertEqual(result, "Delegated Transcript")
+        mock_get_transcript.assert_called_with(url)
 
-    @patch('chat.services.transcription_service.yt_dlp.YoutubeDL')
-    @patch('chat.services.transcription_service.transcribe_audio_gemini')
-    @patch('chat.services.transcription_service.tempfile.mkdtemp')
-    @patch('chat.services.transcription_service.glob.glob')
-    @patch('chat.services.transcription_service.shutil.rmtree')
-    def test_transcribe_youtube_video_flow(self, mock_rmtree, mock_glob, mock_mkdtemp, mock_transcribe_gemini, mock_ydl):
-        """Testa o fluxo completo de download e transcrição do YouTube."""
+    @patch('chat.services.youtube_service.yt_dlp.YoutubeDL')
+    @patch('chat.services.youtube_service.transcribe_audio_gemini')
+    @patch('chat.services.youtube_service.tempfile.mkdtemp')
+    @patch('chat.services.youtube_service.glob.glob')
+    @patch('chat.services.youtube_service.shutil.rmtree')
+    @patch('chat.services.youtube_service.YouTubeService._fetch_captions')
+    def test_youtube_service_fallback_flow(self, mock_fetch_captions, mock_rmtree, mock_glob, mock_mkdtemp, mock_transcribe_gemini, mock_ydl):
+        """Testa o fluxo completo de download e transcrição do YouTubeService (Fallback)."""
+        # 1. Simulate Caption Failure
+        mock_fetch_captions.side_effect = Exception("No captions")
+
+        # 2. Setup Download Mocks
         mock_mkdtemp.return_value = "/tmp/test"
         mock_glob.return_value = ["/tmp/test/video.m4a"]
         mock_transcribe_gemini.return_value = {'success': True, 'transcription': 'Gemini Text'}
 
-        # Mock do context manager do YoutubeDL
+        # Mock YoutubeDL context manager
         mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.return_value = {'duration': 100} # Valid duration
         mock_ydl.return_value.__enter__.return_value = mock_ydl_instance
 
-        # Mock open para leitura do arquivo de audio
-        with patch('chat.services.transcription_service.open', mock_open(read_data=b'audio data')):
-            result = transcribe_youtube_video("http://youtube.com/video")
+        # Execute
+        with patch('chat.services.youtube_service.open', mock_open(read_data=b'audio data')):
+            result = YouTubeService.get_transcript("https://www.youtube.com/watch?v=12345678901")
 
-        self.assertEqual(result['transcription'], 'Gemini Text')
+        # Assertions
+        self.assertEqual(result, 'Gemini Text')
+        mock_fetch_captions.assert_called()
         mock_ydl_instance.download.assert_called()
         mock_transcribe_gemini.assert_called()
         mock_rmtree.assert_called_with("/tmp/test", ignore_errors=True)
