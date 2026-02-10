@@ -50,46 +50,81 @@ class PodcastScriptingService:
             required=["episode_title", "episode_summary", "chapters", "dialogue"]
         )
 
-        # 1. STYLE / PERSONA
+        # 1. SYSTEM INSTRUCTION
         persona_instruction = ""
         if bot_prompt:
-            persona_instruction = f"HOST PERSONA:\n{bot_prompt}\nAdopt this persona for the Host's tone and style.\n"
+            persona_instruction = f"{{BOT_PERSONA}} content:\n{bot_prompt}\n"
 
-        style_block = (
-            f"STYLE & ROLES:\n"
-            f"- HOST ({host_display}): The expert/guide. {persona_instruction}\n"
-            f"- COHOST: The curious, insightful interviewer who asks questions to clarify content.\n"
-            f"- Tone: Conversational, deep dive, slightly informal but professional. NotebookLM style.\n"
-            f"- Language: Portuguese (unless context strongly implies English).\n"
-            f"- Duration Context: {duration_constraint}.\n"
-        )
+        system_instruction = f"""You are generating a short educational podcast script for a study assistant app.
 
-        # 2. FACT POLICY (HARD)
-        fact_policy = (
-            "FACT POLICY (STRICT RULES):\n"
-            "- USE ONLY THE PROVIDED SOURCE MATERIAL FOR FACTS.\n"
-            "- DO NOT INVENT DETAILS, NUMBERS, OR EXAMPLES NOT PRESENT IN THE SOURCE.\n"
-            "- IF THE CONTEXT IS INSUFFICIENT, THE HOST MUST CLEARLY STATE THAT THE TOPIC CANNOT BE FULLY DISCUSSED.\n"
-            "- AVOID HALLUCINATIONS AT ALL COSTS.\n"
-        )
+The script has two speakers:
+- HOST: the tutor (must sound like the tutor personality).
+- COHOST: a neutral co-host who asks clarifying questions and keeps the conversation structured.
 
-        # 3. TASK & CONTEXT
-        prompt = (
-            f"Create an engaging, educational podcast script titled '{title}'.\n\n"
-            f"{style_block}\n"
-            f"{fact_policy}\n"
-            f"SOURCE MATERIAL:\n{context}\n\n"
-            f"Generate a full script with title, summary, chapters, and dialogue."
-        )
+STYLE / FLOW
+- Sound natural, like a friendly NotebookLM-style conversation.
+- Keep turns short and clear (1–4 sentences per turn).
+- COHOST should ask questions that help the listener understand.
+- HOST should explain clearly and teach.
+
+LANGUAGE
+- Write in the user's language: Portuguese (unless context strongly implies English).
+
+HOST IDENTITY
+- HOST display name MUST be exactly: "{host_display}".
+- HOST personality (follow for tone only):
+  {persona_instruction}
+
+CONTEXT
+You will receive SOURCE MATERIAL. It is the ONLY allowed source for factual statements.
+
+OUTPUT FORMAT (STRICT)
+- Output MUST be valid JSON that matches the provided schema.
+- Do not include markdown.
+- Do not include citations like [1].
+- Do not include any extra keys outside the schema.
+- Chapters must be 3 to 7 items and must point to valid dialogue indexes.
+
+FACT POLICY (HARD RULES — MUST FOLLOW)
+- USE ONLY THE SOURCE MATERIAL FOR FACTS.
+- DO NOT INVENT DETAILS, NUMBERS, OR EXAMPLES THAT ARE NOT IN THE SOURCE MATERIAL.
+- IF THE SOURCE MATERIAL IS INSUFFICIENT TO SUPPORT A TOPIC, YOU MUST SAY SO CLEARLY IN THE DIALOGUE.
+- DO NOT USE WEB KNOWLEDGE OR PRIOR KNOWLEDGE.
+- NEVER CLAIM YOU READ OR ACCESSED ANYTHING OUTSIDE THE SOURCE MATERIAL.
+"""
+
+        # 2. USER PROMPT
+        user_prompt = f"""TITLE: {title}
+TARGET DURATION: {duration_constraint}
+AUDIENCE: A learner studying this topic.
+
+SOURCE MATERIAL:
+<<<
+{context}
+>>>
+
+TASK
+Create a podcast script JSON using the required schema:
+1) episode_title: a concise title derived from the material
+2) episode_summary: 2–4 lines describing what will be covered
+3) chapters: 3–7 short chapter titles with start_turn_index pointing into dialogue
+4) dialogue: 2-speaker conversation (HOST and COHOST), where HOST teaches from the material
+
+Remember:
+- HOST display_name MUST be "{host_display}"
+- COHOST display_name MUST be "Co-host"
+- If the user’s question/topic is not supported by SOURCE MATERIAL, say that clearly instead of inventing.
+"""
 
         try:
             response = client.models.generate_content(
                 model=model_name,
-                contents=prompt,
+                contents=user_prompt,
                 config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
                     response_mime_type="application/json",
                     response_schema=script_schema,
-                    temperature=0.4
+                    temperature=0.45
                 )
             )
 

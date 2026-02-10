@@ -35,11 +35,19 @@ class PodcastPersonalizationTest(TestCase):
 
         # Check Prompt Construction
         call_args = mock_client.models.generate_content.call_args
-        prompt = call_args.kwargs['contents']
 
-        self.assertIn("HOST (Host (Tutor))", prompt)
-        self.assertIn("Be funny", prompt)
-        self.assertIn("COHOST", prompt)
+        # Check System Instruction
+        config = call_args.kwargs['config']
+        system_instruction = config.system_instruction
+
+        self.assertIn('HOST display name MUST be exactly: "Host (Tutor)"', system_instruction)
+        self.assertIn("Be funny", system_instruction)
+        self.assertIn("FACT POLICY (HARD RULES — MUST FOLLOW)", system_instruction)
+
+        # Check User Prompt (Context)
+        user_prompt = call_args.kwargs['contents']
+        self.assertIn("TITLE: Lesson 1", user_prompt)
+        self.assertIn("SOURCE MATERIAL", user_prompt)
 
     @patch('studio.services.audio_mixer.generate_tts_audio')
     @patch('studio.services.audio_mixer.tempfile.NamedTemporaryFile')
