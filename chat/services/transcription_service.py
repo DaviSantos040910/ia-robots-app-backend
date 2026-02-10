@@ -10,6 +10,7 @@ import yt_dlp
 from google.genai import types
 
 from .ai_client import get_ai_client
+from core.genai_models import GENAI_MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def transcribe_audio_gemini(audio_file) -> dict:
         )
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=GENAI_MODEL_TEXT,
             contents=[prompt, audio_part],
             config=types.GenerateContentConfig(temperature=0.2)
         )

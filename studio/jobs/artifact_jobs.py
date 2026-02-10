@@ -9,9 +9,10 @@ from studio.models import KnowledgeArtifact
 from studio.services.source_assembler import SourceAssemblyService
 from studio.services.podcast_scripting import PodcastScriptingService
 from studio.services.audio_mixer import AudioMixerService
-from chat.services.ai_client import get_ai_client, get_model
+from chat.services.ai_client import get_ai_client
 from studio.schemas import QUIZ_SCHEMA, FLASHCARD_SCHEMA, SUMMARY_SCHEMA, SLIDE_SCHEMA
 from google.genai import types
+from core.genai_models import GENAI_MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,8 @@ def _generate_podcast(artifact, context, options):
 
 def _generate_standard_artifact(artifact, full_context, options):
     client = get_ai_client()
-    model_name = get_model('chat')
+    # model_name = get_model('chat') # Already updated to use GENAI_MODEL_TEXT
+    model_name = GENAI_MODEL_TEXT
 
     bot_prompt = artifact.chat.bot.prompt if artifact.chat.bot and artifact.chat.bot.prompt else None
     system_instruction, response_schema = _build_prompt_and_schema(

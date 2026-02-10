@@ -9,6 +9,7 @@ from google.genai import types
 from django.conf import settings
 import os
 import logging
+from core.genai_models import GENAI_MODEL_TEXT, GENAI_MODEL_TTS
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ Regras:
 Responda APENAS: TEXT ou IMAGE"""
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
+            model=GENAI_MODEL_TEXT,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0, max_output_tokens=10)
         )
@@ -157,20 +158,20 @@ def generate_content_stream(contents, config, model_name=None, use_google_search
 # Modelos disponíveis por tipo de API
 MODELS = {
     'gemini_api': {
-        'chat': 'gemini-2.5-flash-lite',
+        'chat': GENAI_MODEL_TEXT,
         'chat_pro': 'gemini-2.5-pro',
         'image': 'gemini-2.5-flash-image',
         'embedding': 'gemini-embedding-001',
-        'tts': 'gemini-2.5-flash-preview-tts',
-        'lite': 'gemini-2.5-flash-lite',
+        'tts': GENAI_MODEL_TTS,
+        'lite': GENAI_MODEL_TEXT,
     },
     'vertex_ai': {
-        'chat': 'gemini-2.5-flash-lite',
+        'chat': GENAI_MODEL_TEXT,
         'chat_pro': 'gemini-2.5-pro',
         'image': 'imagen-3.0-generate-002',
         'embedding': 'text-embedding-004',
-        'tts': 'gemini-2.5-flash-preview-tts',
-        'lite': 'gemini-2.5-flash-lite',
+        'tts': GENAI_MODEL_TTS,
+        'lite': GENAI_MODEL_TEXT,
     }
 }
 
