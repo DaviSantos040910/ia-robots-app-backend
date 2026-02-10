@@ -12,15 +12,23 @@ logger = logging.getLogger(__name__)
 
 class AudioMixerService:
     @staticmethod
-    def mix_podcast(script: list, bot_voice_enum: str = None) -> str:
+    def mix_podcast(script, bot_voice_enum: str = None) -> str:
         """
         Mixes a podcast script into a single audio file using parallel TTS generation.
-        script: List of dicts [{"speaker": "...", "text": "..."}]
+        script: List of dicts (Legacy) OR Dict with 'dialogue' key (New).
         bot_voice_enum: The Bot.voice value to map to a real Gemini voice for the Host.
         Returns: Relative path to the generated audio file in MEDIA_ROOT.
         """
         if not script:
             raise ValueError("Script is empty.")
+
+        # Normalize Script: Handle Legacy List vs New Dict
+        dialogue = script
+        if isinstance(script, dict):
+            dialogue = script.get('dialogue', [])
+
+        if not dialogue:
+             raise ValueError("Dialogue is empty.")
 
         # Resolve Host Voice
         host_voice = get_gemini_voice(bot_voice_enum)
@@ -63,7 +71,7 @@ class AudioMixerService:
             # Parallel Execution
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = []
-                for i, turn in enumerate(script):
+                for i, turn in enumerate(dialogue):
                     futures.append(executor.submit(process_turn, i, turn))
 
                 for future in concurrent.futures.as_completed(futures):
@@ -82,7 +90,7 @@ class AudioMixerService:
             silence = AudioSegment.silent(duration=300)
 
             # Iterate by original index to preserve order
-            for i in range(len(script)):
+            for i in range(len(dialogue)):
                 if i in segments_map:
                     full_audio += segments_map[i]
                     full_audio += silence

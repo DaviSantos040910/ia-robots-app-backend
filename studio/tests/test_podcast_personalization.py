@@ -10,7 +10,14 @@ class PodcastPersonalizationTest(TestCase):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_response = MagicMock()
-        mock_response.parsed = [{"speaker": "Host (Tutor)", "text": "Hello"}]
+
+        # Mock structured response
+        mock_response.parsed = {
+            "episode_title": "Lesson 1",
+            "episode_summary": "Summary",
+            "chapters": [],
+            "dialogue": [{"speaker": "Host (Tutor)", "text": "Hello"}]
+        }
         mock_client.models.generate_content.return_value = mock_response
 
         # Execute
@@ -22,7 +29,9 @@ class PodcastPersonalizationTest(TestCase):
         )
 
         # Assertions
-        self.assertEqual(script[0]['speaker'], "Host (Tutor)")
+        self.assertIsInstance(script, dict)
+        self.assertIn('dialogue', script)
+        self.assertEqual(script['dialogue'][0]['speaker'], "Host (Tutor)")
 
         # Check Prompt Construction
         call_args = mock_client.models.generate_content.call_args

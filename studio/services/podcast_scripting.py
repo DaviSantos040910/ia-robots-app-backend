@@ -21,15 +21,33 @@ class PodcastScriptingService:
 
         # Define Schema with Dynamic Host Name
         script_schema = types.Schema(
-            type=types.Type.ARRAY,
-            items=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "speaker": types.Schema(type=types.Type.STRING, enum=[host_name, cohost_name]),
-                    "text": types.Schema(type=types.Type.STRING)
-                },
-                required=["speaker", "text"]
-            )
+            type=types.Type.OBJECT,
+            properties={
+                "episode_title": types.Schema(type=types.Type.STRING, description="Catchy title for the episode"),
+                "episode_summary": types.Schema(type=types.Type.STRING, description="Brief summary (2-4 lines)"),
+                "chapters": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "title": types.Schema(type=types.Type.STRING),
+                            "start_turn_index": types.Schema(type=types.Type.INTEGER, description="Index of the dialogue turn where chapter starts")
+                        }
+                    )
+                ),
+                "dialogue": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(
+                        type=types.Type.OBJECT,
+                        properties={
+                            "speaker": types.Schema(type=types.Type.STRING, enum=[host_name, cohost_name]),
+                            "text": types.Schema(type=types.Type.STRING)
+                        },
+                        required=["speaker", "text"]
+                    )
+                )
+            },
+            required=["episode_title", "episode_summary", "dialogue"]
         )
 
         # 1. STYLE / PERSONA
@@ -61,7 +79,7 @@ class PodcastScriptingService:
             f"{style_block}\n"
             f"{fact_policy}\n"
             f"SOURCE MATERIAL:\n{context}\n\n"
-            f"Generate a dialogue script based on the above."
+            f"Generate a full script with title, summary, chapters, and dialogue."
         )
 
         try:
