@@ -71,17 +71,16 @@ def generate_artifact_job(artifact_id, options):
         raise e # Re-raise to trigger RQ retry if configured
 
 def _generate_podcast(artifact, context, options):
-    # This logic was extracted from View
-    # 1. Generate Script
+    # 1. Generate Script with Dynamic Host Persona
+    bot = artifact.chat.bot
     script = PodcastScriptingService.generate_script(
         title=artifact.title,
         context=context,
-        duration_constraint=options.get('target_duration', 'Medium')
+        duration_constraint=options.get('target_duration', 'Medium'),
+        bot_name=bot.name,
+        bot_prompt=bot.prompt
     )
     artifact.content = script
-    # We update content here so if mixing fails, we at least have the script?
-    # Or just wait until end. The main job logic saves content at the end.
-    # But podcast helper updates artifact object instance.
 
     # 2. Rendering Audio (Mixing)
     artifact.stage = KnowledgeArtifact.Stage.RENDERING_EXPORT

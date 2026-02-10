@@ -21,22 +21,27 @@ class AudioMixerService:
             raise ValueError("Script is empty.")
 
         # Voice Mapping
-        voice_map = {
-            "Host (Alex)": "Kore",
-            "Guest (Jamie)": "Fenrir"
-        }
+        # We now support dynamic host names like "Host (BotName)".
+        # We detect role by prefix.
+
+        def get_voice_for_speaker(speaker_name):
+            if speaker_name.startswith("Host"):
+                return "Kore" # Main Host
+            elif speaker_name == "Co-host":
+                return "Fenrir" # Co-host
+            return "Kore" # Fallback
 
         temp_files = []
         # Store segments in order: {index: AudioSegment}
         segments_map = {}
 
         def process_turn(index, turn):
-            speaker = turn.get("speaker", "Host (Alex)")
+            speaker = turn.get("speaker", "Host")
             text = turn.get("text", "")
             if not text:
                 return None
 
-            voice = voice_map.get(speaker, "Kore")
+            voice = get_voice_for_speaker(speaker)
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                 temp_path = tf.name
