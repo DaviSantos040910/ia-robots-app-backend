@@ -348,10 +348,17 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
 
         # 4. DOCUMENTOS RICOS (PDF via HTML)
         else:
-            context = {'artifact': artifact, 'content': artifact.content}
-            html_string = render_to_string('studio/pdf_template.html', context)
+            template_name = 'pdf/pdf_summary.html' # Default
+            if artifact.type == KnowledgeArtifact.ArtifactType.QUIZ:
+                template_name = 'pdf/pdf_quiz.html'
+            elif artifact.type == KnowledgeArtifact.ArtifactType.FLASHCARD:
+                template_name = 'pdf/pdf_flashcards.html'
+
+            context = {'artifact': artifact, 'content': artifact.content, 'request': request}
+            html_string = render_to_string(template_name, context)
+
             pdf_file = io.BytesIO()
-            HTML(string=html_string).write_pdf(pdf_file)
+            HTML(string=html_string, base_url=request.build_absolute_uri('/')).write_pdf(pdf_file)
             pdf_file.seek(0)
             return FileResponse(pdf_file, as_attachment=True, filename=f"{artifact.title}.pdf")
 
