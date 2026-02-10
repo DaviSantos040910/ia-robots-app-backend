@@ -63,6 +63,14 @@ class KnowledgeArtifact(models.Model):
         READY = 'ready', 'Ready'
         ERROR = 'error', 'Error'
 
+    class Stage(models.TextChoices):
+        QUEUED = 'QUEUED', 'Queued'
+        ASSEMBLING_CONTEXT = 'ASSEMBLING_CONTEXT', 'Assembling Context'
+        GENERATING = 'GENERATING', 'Generating Content'
+        RENDERING_EXPORT = 'RENDERING_EXPORT', 'Rendering Export'
+        READY = 'READY', 'Ready'
+        ERROR = 'ERROR', 'Error'
+
     chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name='artifacts')
     type = models.CharField(max_length=20, choices=ArtifactType.choices)
     title = models.CharField(max_length=255)
@@ -82,6 +90,18 @@ class KnowledgeArtifact(models.Model):
     # Optional score if we want to store user performance on a quiz artifact here?
     # The frontend interface shows `score?: string`.
     score = models.CharField(max_length=20, null=True, blank=True)
+
+    # Job tracking
+    stage = models.CharField(
+        max_length=50,
+        choices=Stage.choices,
+        default=Stage.QUEUED
+    )
+    correlation_id = models.UUIDField(null=True, blank=True)
+    attempts = models.IntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -24,3 +24,6 @@ sendgrid
 django-ratelimit
 pydub
 audioop-lts; python_version >= '3.13'
+rq
+django-rq
+redis

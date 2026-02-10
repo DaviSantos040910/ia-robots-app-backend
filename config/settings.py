@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "chat",  # Custom app
     "explore", # Add this line
     "studio", # Add this line
+    "django_rq",
 ]
 
 MIDDLEWARE = [
@@ -188,3 +189,13 @@ USE_VERTEX_AI = False
 # Configurações Vertex AI (preencha quando for migrar)
 VERTEX_PROJECT_ID = os.getenv('VERTEX_PROJECT_ID', '')
 VERTEX_LOCATION = os.getenv('VERTEX_LOCATION', 'us-central1')
+
+# RQ Configuration
+RQ_QUEUES = {
+    'default': {
+        'HOST': os.getenv('REDIS_HOST', 'localhost'),
+        'PORT': int(os.getenv('REDIS_PORT', 6379)),
+        'DB': 0,
+        'DEFAULT_TIMEOUT': 360,
+    },
+}
