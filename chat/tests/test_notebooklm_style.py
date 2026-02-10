@@ -22,32 +22,35 @@ class NotebookLMStyleTest(TestCase):
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_mode_personality_refusal(self, mock_get_client, mock_get_docs, mock_search):
         """
-        Test that strict mode refusal uses static template (ZERO model calls).
+        Test that strict mode refusal uses static template, but MAY use Style Rewriter if persona exists.
+        Since we test for ZERO model calls here (assuming Style Rewriter mocking or disabled),
+        we check the deterministic output.
+        Actually, with StyleRewriter integrated, it MIGHT call model if we don't mock strict_style_service.
+        Let's mock strict_style_service to return base text to keep test deterministic.
         """
-        # Configure Pirate Bot (Note: Static template won't use pirate persona anymore,
-        # as per requirement to use fixed template without model call)
-        self.bot.prompt = "You are a grumpy Pirate Captain. Always say 'Arrgh!'."
+        self.bot.prompt = "You are a grumpy Pirate Captain."
         self.bot.save()
         
         # Setup: No context found
-        mock_search.return_value = ([], []) # doc_contexts, memory_contexts
-        # Setup: Docs exist in library
+        mock_search.return_value = ([], [])
         mock_get_docs.return_value = [{'source': 'TreasureMap.pdf'}]
         
-        # Mock Gemini Client
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Execute
-        response = get_ai_response(self.chat.id, "Where is the gold?")
+        # Mock Style Service to return base text (avoiding LLM call inside style service)
+        with patch('chat.services.chat_service.strict_style_service.rewrite_strict_refusal') as mock_rewrite:
+            mock_rewrite.side_effect = lambda text, *args: text # Return original text
 
-        # Verify
-        # Should NOT call generate_content
-        self.assertEqual(mock_client.models.generate_content.call_count, 0)
-        
-        # Check static content
-        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Where is the gold?'", response['content'])
-        self.assertIn("As fontes disponíveis tratam principalmente de: TreasureMap.pdf", response['content'])
+            # Execute
+            response = get_ai_response(self.chat.id, "Where is the gold?")
+
+            # Verify: Base LLM (answer gen) not called
+            self.assertEqual(mock_client.models.generate_content.call_count, 0)
+
+            # Verify we got the deterministic refusal
+            self.assertIn("StrictBot: I couldn’t find this information", response['content'])
+            self.assertIn("Question: “Where is the gold?”", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -55,27 +58,27 @@ class NotebookLMStyleTest(TestCase):
     def test_strict_mode_no_context_fallback(self, mock_get_client, mock_get_docs, mock_search):
         """
         Verify that when strict_context is True and no docs are found, 
-        it returns the fixed refusal template without calling AI.
+        it returns the fixed refusal template without calling AI (answer gen).
         """
-        # Setup: No context found
-        mock_search.return_value = ([], []) # doc_contexts, memory_contexts
-        # Setup: Docs exist in library
+        # Setup: No context
+        mock_search.return_value = ([], [])
         mock_get_docs.return_value = [{'source': 'Physics.pdf'}]
         
-        # Mock Gemini Client
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Execute
-        response = get_ai_response(self.chat.id, "Qual a capital da França?")
+        # Ensure style rewriter doesn't interfere
+        with patch('chat.services.chat_service.strict_style_service.rewrite_strict_refusal') as mock_rewrite:
+            mock_rewrite.side_effect = lambda text, *args: text
 
-        # Verify
-        # Should NOT call generate_content
-        self.assertEqual(mock_client.models.generate_content.call_count, 0)
-        
-        # Check static content
-        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Qual a capital da França?'", response['content'])
-        self.assertIn("Physics.pdf", response['content'])
+            response = get_ai_response(self.chat.id, "Qual a capital da França?")
+
+            # Verify no LLM call for answering
+            self.assertEqual(mock_client.models.generate_content.call_count, 0)
+
+            # Check content (Portuguese detected)
+            self.assertIn("StrictBot: Não encontrei essa informação", response['content'])
+            self.assertIn("Pergunta: “Qual a capital da França?”", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
@@ -84,11 +87,15 @@ class NotebookLMStyleTest(TestCase):
         Verify strict mode with zero documents uploaded.
         """
         mock_search.return_value = ([], [])
-        mock_get_docs.return_value = [] # No docs at all
-
-        response = get_ai_response(self.chat.id, "Hello")
+        mock_get_docs.return_value = []
         
-        self.assertIn("Para responder, preciso que você adicione fontes", response['content'])
+        # Mock style service again
+        with patch('chat.services.chat_service.strict_style_service.rewrite_strict_refusal') as mock_rewrite:
+            mock_rewrite.side_effect = lambda text, *args: text
+
+            response = get_ai_response(self.chat.id, "Hello")
+
+            self.assertIn("In strict mode, I can only answer using sources", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')

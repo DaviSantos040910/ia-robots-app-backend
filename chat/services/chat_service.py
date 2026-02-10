@@ -47,70 +47,7 @@ vector_service = VectorService()
 image_service = ImageGenerationService()
 
 
-def _detect_lang(text: str) -> str:
-    """
-    Detecta idioma (pt, es, en) baseado em heurística simples.
-    """
-    text = text.lower()
-
-    # Spanish heuristics
-    es_markers = ["¿", "¡", "qué", "cómo", "por qué", "dónde", "fuente", "fuentes"]
-    if any(m in text for m in es_markers):
-        return "es"
-
-    # Portuguese heuristics
-    pt_markers = ["você", "não", "por que", "onde", "fonte", "fontes", "documento", "documentos", "tutor", "quais", "quem", r"\bqual\b"]
-    # Check whole words for some markers to avoid false positives (e.g. 'none' containing 'on')
-    # Simple check is usually enough given the distinct markers
-    if any(re.search(m, text) if r"\b" in m else m in text for m in pt_markers):
-        return "pt"
-
-    # Default to English
-    return "en"
-
-def _safe_excerpt(text: str, max_len: int = 120) -> str:
-    """
-    Gera um trecho seguro do texto (sem quebras de linha, truncado).
-    """
-    if not text:
-        return ""
-
-    # Remove newlines and extra spaces
-    cleaned = " ".join(text.split())
-
-    if len(cleaned) > max_len:
-        return cleaned[:max_len] + "…"
-    return cleaned
-
-def _build_strict_refusal(bot_name: str, question: str, lang: str = None, has_any_sources: bool = False) -> str:
-    """
-    Constrói a mensagem de recusa strict determinística.
-    """
-    if not lang:
-        lang = _detect_lang(question)
-
-    q_excerpt = _safe_excerpt(question)
-
-    prefix = f"{bot_name}: " if bot_name else ""
-
-    # Templates
-    templates = {
-        "pt": {
-            True: "{prefix}Não encontrei essa informação nas suas fontes para responder em modo restrito.\n\nPergunta: “{q}”\n\nPara eu ajudar com base nas fontes, você pode:\n- adicionar uma fonte relevante,\n- indicar onde isso aparece (arquivo/página/trecho),\n- ou reformular a pergunta usando termos presentes nos documentos.",
-            False: "{prefix}No modo restrito, eu só posso responder usando fontes.\n\nPergunta: “{q}”\n\nPara eu ajudar, adicione uma fonte (PDF, imagem, link, etc.) e tente novamente."
-        },
-        "en": {
-            True: "{prefix}I couldn’t find this information in your sources to answer in strict mode.\n\nQuestion: “{q}”\n\nTo help based on your sources, you can:\n- add a relevant source,\n- point to where this appears (file/page/section),\n- or rephrase using terms present in the documents.",
-            False: "{prefix}In strict mode, I can only answer using sources.\n\nQuestion: “{q}”\n\nTo help, add a source (PDF, image, link, etc.) and try again."
-        },
-        "es": {
-            True: "{prefix}No encontré esta información en tus fuentes para responder en modo estricto.\n\nPregunta: “{q}”\n\nPara ayudar basándome en tus fuentes, puedes:\n- agregar una fuente relevante,\n- indicar dónde aparece (archivo/página/sección),\n- o reformular usando términos presentes en los documentos.",
-            False: "{prefix}En modo estricto, solo puedo responder usando fuentes.\n\nPregunta: “{q}”\n\nPara ayudar, agrega una fuente (PDF, imagen, enlace, etc.) e inténtalo de nuevo."
-        }
-    }
-
-    template = templates.get(lang, templates["en"])[has_any_sources]
-    return template.format(prefix=prefix, q=q_excerpt)
+# Helper functions removed to avoid duplication with strict_boundary
 
 
 def _calculate_metrics(response_text: str, context_sources: list) -> dict:
@@ -322,14 +259,12 @@ def get_ai_response(
 
         # --- Strict Mode Fallback Logic (NotebookLM Style) ---
         if strict_context and not doc_contexts:
-            if available_doc_names:
-                logger.info("[Sync] Strict Mode + No Context Found -> Generating Refusal Template")
-                refusal_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=True)
-                return _parse_ai_response(refusal_text)
-            else:
-                logger.info("[Sync] Strict Mode + No Docs at All -> Refusal")
-                refusal_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=False)
-                return _parse_ai_response(refusal_text)
+            # Use deterministic strict refusal from strict_boundary
+            has_sources = bool(available_doc_names)
+            logger.info(f"[Sync] Strict Mode + No Context -> Refusal (Sources: {has_sources})")
+
+            refusal_text = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=has_sources)
+            return _parse_ai_response(refusal_text)
 
         # --- Mixed Mode Fallback (Sync) ---
         elif not strict_context and not doc_contexts and allow_web_search:
@@ -426,7 +361,7 @@ def get_ai_response(
             has_citation = bool(re.search(r'\[\d+\]', result_data['content']))
             if not has_citation:
                 logger.warning(f"[Guardrail] Chat {chat_id}: Strict Mode enabled but NO citations found. Triggering refusal.")
-                refusal_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_doc_names))
+                refusal_text = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_doc_names))
                 result_data = _parse_ai_response(refusal_text)
                 # Clear citations legend logic triggers below since content changed
                 source_map = {} 
@@ -566,7 +501,7 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                 base_refusal,
                 bot.prompt,
                 bot.name,
-                _detect_lang(user_message_text)
+                strict_boundary.detect_lang(user_message_text)
             )
 
             ai_message = ChatMessage.objects.create(
@@ -643,7 +578,7 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                 full_text = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=True)
                 source_map = {} # Clear sources
                 # Optional: Rewrite refusal style
-                full_text = strict_style_service.rewrite_strict_refusal(full_text, bot.prompt, bot.name, _detect_lang(user_message_text))
+                full_text = strict_style_service.rewrite_strict_refusal(full_text, bot.prompt, bot.name, strict_boundary.detect_lang(user_message_text))
 
             # Parse Suggestions & Clean Content
             final_suggestions = []

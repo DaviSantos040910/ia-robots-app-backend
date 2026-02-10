@@ -66,8 +66,8 @@ class SourceAssemblerTest(TestCase):
         self.assertIn("[Source: File 1.pdf]", result)
 
     @patch('chat.vector_service.vector_service.search_context')
-    def test_get_context_with_chat_history(self, mock_search):
-        """Testa inclusão do histórico junto com RAG."""
+    def test_get_context_ignores_chat_history(self, mock_search):
+        """Testa que o histórico do chat é IGNORADO mesmo se solicitado."""
 
         # Setup Chat History
         ChatMessage.objects.create(chat=self.chat, role='user', content="User says hello")
@@ -96,11 +96,10 @@ class SourceAssemblerTest(TestCase):
 
         result = SourceAssemblyService.get_context_from_config(self.chat.id, config, query=query)
 
-        # Verify both parts are present
+        # Verify chunk is present but history is NOT
         self.assertIn("Chunk 1", result)
-        self.assertIn("--- CHAT HISTORY ---", result)
-        self.assertIn("User says hello", result)
-        self.assertIn("Bot says hi", result)
+        self.assertNotIn("--- CHAT HISTORY ---", result)
+        self.assertNotIn("User says hello", result)
 
     @patch('chat.vector_service.vector_service.search_context')
     def test_get_context_no_relevant_chunks(self, mock_search):

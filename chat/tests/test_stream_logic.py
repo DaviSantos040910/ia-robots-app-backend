@@ -32,8 +32,9 @@ class StreamLogicTest(TestCase):
                     pass
         return messages
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    # Patch CLASS method to affect all instances (chat_service and strict_boundary)
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_on_no_context(self, mock_get_client, mock_get_docs, mock_search):
         """
@@ -79,8 +80,8 @@ class StreamLogicTest(TestCase):
         self.assertIn("Não encontrei essa informação", msg.content)
         self.assertEqual(msg.role, 'assistant')
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_on_context_valid_citation(self, mock_get_client, mock_get_docs, mock_search):
         """
@@ -94,8 +95,8 @@ class StreamLogicTest(TestCase):
         self.bot.strict_context = True
         self.bot.save()
 
-        # Mock: Context found
-        mock_search.return_value = ([{'content': 'Fact', 'source': 'Doc1.pdf', 'source_id': '1'}], [])
+        # Mock: Context found with GOOD score to pass EvidenceGate
+        mock_search.return_value = ([{'content': 'Fact', 'source': 'Doc1.pdf', 'source_id': '1', 'score': 0.1}], [])
         mock_get_docs.return_value = [{'source': 'Doc1.pdf'}]
 
         mock_client = MagicMock()
@@ -129,8 +130,8 @@ class StreamLogicTest(TestCase):
         self.assertTrue(len(end_event['sources']) > 0)
         self.assertEqual(end_event['sources'][0]['id'], '1')
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_on_context_no_citation(self, mock_get_client, mock_get_docs, mock_search):
         """
@@ -145,8 +146,8 @@ class StreamLogicTest(TestCase):
         self.bot.strict_context = True
         self.bot.save()
 
-        # Mock: Context found
-        mock_search.return_value = ([{'content': 'Fact', 'source': 'Doc1.pdf', 'source_id': '1'}], [])
+        # Mock: Context found with GOOD score
+        mock_search.return_value = ([{'content': 'Fact', 'source': 'Doc1.pdf', 'source_id': '1', 'score': 0.1}], [])
         mock_get_docs.return_value = [{'source': 'Doc1.pdf'}]
 
         mock_client = MagicMock()
@@ -179,8 +180,8 @@ class StreamLogicTest(TestCase):
         self.assertIn("I couldn’t find this information", end_event['clean_content'])
         self.assertEqual(end_event['sources'], []) # No sources for refusal
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.generate_content_stream')
     @patch('chat.services.chat_service.get_ai_client')
     def test_strict_off_real_stream(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):
@@ -213,8 +214,8 @@ class StreamLogicTest(TestCase):
         full_text = "".join([e['text'] for e in chunk_events])
         self.assertEqual(full_text, "Chunk 1Chunk 2")
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.generate_content_stream')
     @patch('chat.services.chat_service.get_ai_client')
     def test_suggestions_parsing_safe(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):
@@ -243,8 +244,8 @@ class StreamLogicTest(TestCase):
         self.assertEqual(end_event['suggestions'], ['Sug1'])
         self.assertIn("Context", end_event['clean_content'])
 
-    @patch('chat.services.chat_service.vector_service.search_context')
-    @patch('chat.services.chat_service.vector_service.get_available_documents')
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
     @patch('chat.services.chat_service.generate_content_stream')
     @patch('chat.services.chat_service.get_ai_client')
     def test_suggestions_parsing_valid_trust(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):

@@ -5,6 +5,7 @@ import logging
 from chat.services.intent_service import intent_service
 from chat.vector_service import vector_service
 from chat.services.evidence_gate import evidence_gate, EvidenceDecision
+from chat.services.evidence_tiebreaker_ai import evidence_tiebreaker
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,16 @@ class StrictBoundary:
 
             if decision == EvidenceDecision.ANSWER:
                 return ResponseMode.STRICT_ANSWER_WITH_CONTEXT, doc_contexts, best_score, reason
-            else:
+            elif decision == EvidenceDecision.REFUSE:
                 return ResponseMode.STRICT_REFUSAL, doc_contexts, best_score, reason
+            else: # UNCERTAIN -> Tiebreaker AI
+                tie_decision, conf, tie_reason = evidence_tiebreaker.decide(user_text, doc_contexts)
+                final_reason = f"{reason} -> Tiebreaker: {tie_decision.name} ({conf:.2f}, {tie_reason})"
+
+                if tie_decision == EvidenceDecision.ANSWER:
+                    return ResponseMode.STRICT_ANSWER_WITH_CONTEXT, doc_contexts, best_score, final_reason
+                else:
+                    return ResponseMode.STRICT_REFUSAL, doc_contexts, best_score, final_reason
 
         # 2. Non-Strict Mode
         else:
@@ -75,9 +84,9 @@ class StrictBoundary:
         Constrói mensagem de recusa. (Ported from chat_service to break dependency cycle if needed)
         """
         if not lang:
-            lang = self._detect_lang(question)
+            lang = self.detect_lang(question)
 
-        q_excerpt = self._safe_excerpt(question)
+        q_excerpt = self.safe_excerpt(question)
         prefix = f"{bot_name}: " if bot_name else ""
 
         templates = {
@@ -98,7 +107,7 @@ class StrictBoundary:
         template = templates.get(lang, templates["en"])[has_any_sources]
         return template.format(prefix=prefix, q=q_excerpt)
 
-    def _detect_lang(self, text: str) -> str:
+    def detect_lang(self, text: str) -> str:
         text = text.lower()
         es_markers = ["¿", "¡", "qué", "cómo", "por qué", "dónde", "fuente", "fuentes"]
         if any(m in text for m in es_markers): return "es"
@@ -106,7 +115,7 @@ class StrictBoundary:
         if any(m in text for m in pt_markers): return "pt"
         return "en"
 
-    def _safe_excerpt(self, text: str, max_len: int = 120) -> str:
+    def safe_excerpt(self, text: str, max_len: int = 120) -> str:
         if not text: return ""
         cleaned = " ".join(text.split())
         if len(cleaned) > max_len: return cleaned[:max_len] + "…"

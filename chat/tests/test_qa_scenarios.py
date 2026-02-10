@@ -25,7 +25,7 @@ class QAScenariosTest(TestCase):
         1) STRICT ON
         - Pergunta fora das fontes
         - Esperado: resposta dizendo explicitamente que não encontrou nos documentos
-        - Zero Model Calls (Static Template)
+        - Zero Model Calls (Static Template) - unless style service is active
         """
         # Setup: Strict ON, No Web
         self.bot.strict_context = True
@@ -36,20 +36,23 @@ class QAScenariosTest(TestCase):
         mock_search.return_value = ([], []) 
         mock_get_docs.return_value = [{'source': 'Doc1.pdf'}]
 
-        # Mock Gemini
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # Act
-        response = get_ai_response(self.chat.id, "Qual a cor de Marte?")
+        # Mock style service to be transparent
+        with patch('chat.services.chat_service.strict_style_service.rewrite_strict_refusal') as mock_rewrite:
+            mock_rewrite.side_effect = lambda text, *args: text
 
-        # Assert
-        # Should NOT call model
-        self.assertEqual(mock_client.models.generate_content.call_count, 0)
-        
-        # Should match static template
-        self.assertIn("Os documentos fornecidos não contêm informações sobre 'Qual a cor de Marte?'", response['content'])
-        self.assertIn("Doc1.pdf", response['content'])
+            # Act
+            response = get_ai_response(self.chat.id, "Qual a cor de Marte?")
+
+            # Assert
+            # Should NOT call model (answer gen)
+            self.assertEqual(mock_client.models.generate_content.call_count, 0)
+
+            # Should match static template (strict boundary logic)
+            self.assertIn("QABot: Não encontrei essa informação", response['content'])
+            self.assertIn("Pergunta: “Qual a cor de Marte?”", response['content'])
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')

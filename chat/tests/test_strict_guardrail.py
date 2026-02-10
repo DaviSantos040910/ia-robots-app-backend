@@ -24,45 +24,37 @@ class StrictGuardrailTest(TestCase):
     def test_guardrail_triggers_on_missing_citation(self, mock_get_client, mock_get_docs, mock_search):
         """
         Verify that if the model generates a response WITHOUT citations in Strict Mode,
-        it is replaced by the refusal message.
+        it is replaced by the refusal message (deterministic).
         """
-        # 1. Setup Context (so we bypass the 'No Context' pre-check)
-        mock_search.return_value = ([{'content': 'Some content', 'source': 'Doc.pdf'}], [])
+        # 1. Setup Context with GOOD score to pass EvidenceGate
+        mock_search.return_value = ([{'content': 'Some content', 'source': 'Doc.pdf', 'score': 0.1}], [])
         mock_get_docs.return_value = [{'source': 'Doc.pdf'}]
 
         # 2. Mock Gemini Client
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # 3. Define behavior for TWO calls:
+        # 3. Define behavior:
         # Call 1: The initial generation (HALLUCINATION - No citations)
-        # Call 2: The refusal generation (Triggered by guardrail)
+        # Fallback: Deterministic refusal (no 2nd call to answering model)
         
         response_hallucination = MagicMock()
         response_hallucination.text = "Paris is the capital of France." # No [1] citation!
         
-        response_refusal = MagicMock()
-        response_refusal.text = "As a polite librarian, I cannot find that in 'Doc.pdf'."
+        mock_client.models.generate_content.return_value = response_hallucination
 
-        # side_effect for generate_content
-        mock_client.models.generate_content.side_effect = [
-            response_hallucination,
-            response_refusal
-        ]
+        # Mock style service to avoid LLM call there too
+        with patch('chat.services.chat_service.strict_style_service.rewrite_strict_refusal') as mock_rewrite:
+            mock_rewrite.side_effect = lambda text, *args: text
 
-        # Execute
-        result = get_ai_response(self.chat.id, "Capital of France?")
+            # Execute
+            result = get_ai_response(self.chat.id, "Capital of France?")
 
-        # Verify
-        self.assertEqual(result['content'], "As a polite librarian, I cannot find that in 'Doc.pdf'.")
-        
-        # Verify generate_content was called twice
-        self.assertEqual(mock_client.models.generate_content.call_count, 2)
-        
-        # Verify second call was the refusal prompt
-        call_args_refusal = mock_client.models.generate_content.call_args_list[1]
-        prompt_text = call_args_refusal[1]['contents'][0]['parts'][0]['text']
-        self.assertIn("You MUST output a response following EXACTLY this template", prompt_text)
+            # Verify content matches fallback refusal template
+            self.assertIn("StrictBot: I couldn’t find this information", result['content'])
+
+            # Verify generate_content was called ONCE (only for the answer attempt)
+            self.assertEqual(mock_client.models.generate_content.call_count, 1)
 
     @patch('chat.services.chat_service.vector_service.search_context')
     @patch('chat.services.chat_service.vector_service.get_available_documents')
