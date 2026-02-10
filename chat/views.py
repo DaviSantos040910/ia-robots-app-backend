@@ -694,18 +694,21 @@ class MessageTTSView(APIView):
         if not m.content:
             return Response({"detail": "No content"}, status=400)
 
-        td = Path(settings.MEDIA_ROOT) / 'temp_tts'
-        td.mkdir(parents=True, exist_ok=True)
-        p = td / f"tts_{m.id}_{uuid.uuid4().hex[:8]}.wav"
+        # We don't define a path here, we let the service manage cache paths
+        # Passed user for rate limiting
+        res = generate_tts_audio(m.content, voice_name="Kore", user=request.user)
 
-        res = generate_tts_audio(m.content, str(p))
-        if res['success']:
-            return CleanupFileResponse(
-                open(p, 'rb'),
-                content_type='audio/wav',
-                cleanup_path=str(p)
-            )
-        return Response({"detail": "Error"}, status=500)
+        if res.get('success'):
+            file_path = res['file_path']
+            if os.path.exists(file_path):
+                return FileResponse(
+                    open(file_path, 'rb'),
+                    content_type='audio/wav'
+                )
+
+        error_msg = res.get('error', 'Unknown Error')
+        status_code = 429 if "limit exceeded" in error_msg else 500
+        return Response({"detail": error_msg}, status=status_code)
 
 # =============================================================================
 # VIEWS DE CONTEXTO E FONTES (NOVO)

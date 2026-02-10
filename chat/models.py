@@ -136,3 +136,17 @@ class ChatResponseMetric(models.Model):
 
     def __str__(self):
         return f"Metrics for Msg {self.message.id}: {self.cited_count}/{self.sources_count} citations"
+
+class TTSCache(models.Model):
+    """
+    Cache for generated TTS audio to prevent redundant API calls.
+    """
+    text_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    text = models.TextField()
+    voice = models.CharField(max_length=50)
+    audio_file = models.FileField(upload_to='tts_cache/')
+    duration_ms = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"TTS Cache ({self.voice}): {self.text[:30]}..."
