@@ -271,3 +271,39 @@ class StreamLogicTest(TestCase):
         end_event = events[-1]
         self.assertEqual(end_event['suggestions'], ['Sug1'])
         self.assertEqual(end_event['clean_content'], "Some text ")
+
+    @patch('chat.vector_service.VectorService.search_context')
+    @patch('chat.vector_service.VectorService.get_available_documents')
+    @patch('chat.services.chat_service.generate_content_stream')
+    @patch('chat.services.chat_service.get_ai_client')
+    def test_mixed_mode_disclaimer(self, mock_get_client, mock_generate_stream, mock_get_docs, mock_search):
+        """
+        7. Mixed Mode Disclaimer (Strict OFF + Web ON + No Context)
+        Expected:
+        - Stream answer
+        - Append disclaimer at the end
+        """
+        self.bot.strict_context = False
+        self.bot.allow_web_search = True
+        self.bot.save()
+
+        # No context
+        mock_search.return_value = ([], [])
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Stream standard answer
+        mock_stream_iterator = iter(["This is a ", "web answer."])
+        mock_generate_stream.return_value = mock_stream_iterator
+
+        stream = process_message_stream(self.user.id, self.chat.id, "Q")
+        events = self._consume_stream(stream)
+
+        end_event = events[-1]
+        self.assertIn("Nota sobre fontes", end_event['clean_content'])
+        self.assertIn("This is a web answer.", end_event['clean_content'])
+
+        # Check that disclaimer chunk was sent
+        chunks = [e['text'] for e in events if e['type'] == 'chunk']
+        full_text = "".join(chunks)
+        self.assertIn("Nota sobre fontes", full_text)

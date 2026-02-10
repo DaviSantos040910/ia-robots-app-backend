@@ -266,51 +266,19 @@ def get_ai_response(
             refusal_text = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=has_sources)
             return _parse_ai_response(refusal_text)
 
-        # --- Mixed Mode Fallback (Sync) ---
-        elif not strict_context and not doc_contexts and allow_web_search:
-             logger.info("[Sync] Mixed Mode + No Context -> Forcing Two-Block Answer")
-             mixed_prompt = (
-                 f"User Question: '{user_message_text}'\n\n"
-                 f"Your Personality: '{user_defined_prompt}'\n"
-                 "CONTEXT CHECK: You searched the user's documents but found NO matches.\n"
-                 "INSTRUCTION: You must answer using general knowledge/web search, but you MUST format it in two distinct blocks.\n\n"
-                 "TEMPLATE:\n"
-                 f"Nas suas fontes, não encontrei informações sobre {user_message_text}.\n\n"
-                 "Fora do contexto dos documentos, de forma geral:\n"
-                 "<Insert your helpful answer here based on general knowledge or web search>"
-             )
-             
-             system_instruction = build_system_instruction(
-                bot_prompt=user_defined_prompt,
-                user_name=user_name,
-                doc_contexts=[],
-                memory_contexts=memory_contexts,
-                current_time=current_time_str,
-                available_docs=available_doc_names,
-                allow_web_search=True,
-                strict_context=False
-            )
-             
-             generation_config = types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=2500,
-                system_instruction=system_instruction,
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
-             
-             # Override input
-             input_parts = [{"text": mixed_prompt}]
-
         else:
-            # --- Standard Flow ---
+            # --- Standard Flow (Mixed Mode falls here too now) ---
+            # Mixed Mode Logic (Strict OFF + Web ON + No Context):
+            # Formerly used a special prompt. Now uses standard generation + appended disclaimer.
+
             system_instruction = build_system_instruction(
                 bot_prompt=user_defined_prompt,
                 user_name=user_name,
-            doc_contexts=formatted_doc_contexts,
+                doc_contexts=formatted_doc_contexts,
                 memory_contexts=memory_contexts,
                 current_time=current_time_str,
                 available_docs=available_doc_names,
-                allow_web_search=allow_web_search, # Passa a flag para o construtor de prompt
+                allow_web_search=allow_web_search,
                 strict_context=strict_context
             )
 
@@ -325,7 +293,6 @@ def get_ai_response(
 
             # Adiciona ferramenta Google Search na configuração síncrona (Apenas se Strict Context estiver OFF)
             if allow_web_search and not strict_context:
-                # Se config.tools já existe, adiciona. Se não, cria.
                 if hasattr(generation_config, 'tools') and generation_config.tools:
                     generation_config.tools.append(types.Tool(google_search=types.GoogleSearch()))
                 else:
@@ -365,6 +332,20 @@ def get_ai_response(
                 result_data = _parse_ai_response(refusal_text)
                 # Clear citations legend logic triggers below since content changed
                 source_map = {} 
+
+        # --- MIXED MODE DISCLAIMER (Strict OFF + Web ON + No Context) ---
+        # If the answer was generated without context in mixed mode, append a disclaimer.
+        if not strict_context and allow_web_search and not doc_contexts and result_data['content']:
+            has_citation = bool(re.search(r'\[\d+\]', result_data['content']))
+            if not has_citation: # Only append if no sources were cited (just to be safe)
+                disclaimer = "\n\n---\nNota sobre fontes: não encontrei essa informação nas suas fontes; a resposta acima foi gerada fora do contexto dos documentos."
+
+                # Careful insertion before suggestions if they exist textually (though _parse_ai_response separates them)
+                # result_data['content'] is clean content without suggestions block usually if parsed correctly.
+                # However, _parse_ai_response strips explicit JSON blocks but might leave text.
+                # Since we already parsed suggestions into result_data['suggestions'], we append to content.
+                result_data['content'] += disclaimer
+                logger.info(f"[Sync] Mixed Mode: Appended source disclaimer to response.")
 
         # Build Sources list for frontend
         sources_list = []
@@ -750,6 +731,18 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             if buffer and not is_collecting_suggestions:
                 full_clean_content += buffer
                 yield f"data: {json.dumps({'type': 'chunk', 'text': buffer})}\n\n"
+
+            # --- MIXED MODE DISCLAIMER (STREAMING) ---
+            # If strict is OFF, web is ON, and NO doc contexts were used, append disclaimer.
+            # We assume "no doc contexts" if source_map is empty or doc_contexts was empty.
+            if not strict_context and allow_web_search and not doc_contexts:
+                # Check if citations were used in the stream (unlikely if no doc_contexts, but safe check)
+                has_citation = bool(re.search(r'\[\d+\]', full_clean_content))
+                if not has_citation:
+                    disclaimer = "\n\n---\nNota sobre fontes: não encontrei essa informação nas suas fontes; a resposta acima foi gerada fora do contexto dos documentos."
+                    full_clean_content += disclaimer
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': disclaimer})}\n\n"
+                    logger.info("[Stream] Mixed Mode: Appended source disclaimer.")
 
             final_suggestions = []
             if suggestions_json_str:
