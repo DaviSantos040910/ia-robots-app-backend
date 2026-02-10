@@ -30,7 +30,17 @@ class Bot(models.Model):
     prompt = models.TextField()
     avatar_url = models.ImageField(upload_to='bot_avatars/', null=True, blank=True)
 
-    voice = models.CharField(max_length=50, default='EnergeticYouth')
+    class Voice(models.TextChoices):
+        ENERGETIC_YOUTH = 'energetic_youth', 'Energetic Youth'
+        CALM_ADULT = 'calm_adult', 'Calm Adult'
+        PROFESSOR = 'professor', 'Professor'
+        STORYTELLER = 'storyteller', 'Storyteller'
+
+    voice = models.CharField(
+        max_length=50,
+        choices=Voice.choices,
+        default=Voice.ENERGETIC_YOUTH
+    )
 
     # --- NEW: Flag to enable web search capability ---
     allow_web_search = models.BooleanField(default=False)
