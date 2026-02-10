@@ -6,30 +6,32 @@ import concurrent.futures
 from django.conf import settings
 from pydub import AudioSegment
 from chat.services.tts_service import generate_tts_audio
+from chat.services.voice_mapping import get_gemini_voice
 
 logger = logging.getLogger(__name__)
 
 class AudioMixerService:
     @staticmethod
-    def mix_podcast(script: list) -> str:
+    def mix_podcast(script: list, bot_voice_enum: str = None) -> str:
         """
         Mixes a podcast script into a single audio file using parallel TTS generation.
         script: List of dicts [{"speaker": "...", "text": "..."}]
+        bot_voice_enum: The Bot.voice value to map to a real Gemini voice for the Host.
         Returns: Relative path to the generated audio file in MEDIA_ROOT.
         """
         if not script:
             raise ValueError("Script is empty.")
 
-        # Voice Mapping
-        # We now support dynamic host names like "Host (BotName)".
-        # We detect role by prefix.
+        # Resolve Host Voice
+        host_voice = get_gemini_voice(bot_voice_enum)
+        cohost_voice = "Fenrir" # Fixed generic co-host
 
         def get_voice_for_speaker(speaker_name):
             if speaker_name.startswith("Host"):
-                return "Kore" # Main Host
+                return host_voice
             elif speaker_name == "Co-host":
-                return "Fenrir" # Co-host
-            return "Kore" # Fallback
+                return cohost_voice
+            return host_voice # Fallback
 
         temp_files = []
         # Store segments in order: {index: AudioSegment}

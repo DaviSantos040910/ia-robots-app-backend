@@ -86,7 +86,7 @@ def _generate_podcast(artifact, context, options):
     artifact.stage = KnowledgeArtifact.Stage.RENDERING_EXPORT
     artifact.save(update_fields=['stage'])
 
-    audio_path = AudioMixerService.mix_podcast(script)
+    audio_path = AudioMixerService.mix_podcast(script, bot_voice_enum=bot.voice)
 
     artifact.media_url = f"/media/{audio_path}"
     artifact.duration = options.get('target_duration', '10:00')
