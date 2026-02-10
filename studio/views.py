@@ -3,10 +3,12 @@ import json
 import logging
 import uuid
 import django_rq
+import os
+from django.conf import settings
 from rest_framework import viewsets, permissions, status, parsers
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse, Http404
 from django.template.loader import render_to_string
 from django.db import transaction
 from django.core.files import File
@@ -270,45 +272,52 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             instance.error_message = f"Enqueue failed: {str(e)}"
             instance.save()
 
-    @action(detail=True, methods=['get'])
-    def export(self, request, pk=None):
-        artifact = self.get_object()
+    @action(detail=True, methods=['get'], url_path='download')
+    def download(self, request, pk=None):
+        """
+        Securely download the artifact file.
+        Replaces direct media access and handles on-the-fly generation for non-media artifacts.
+        """
+        artifact = self.get_object() # Ownership check included
 
-        # 1. PODCAST (Áudio) - Download Direto
+        # 1. PODCAST (Audio File)
         if artifact.type == KnowledgeArtifact.ArtifactType.PODCAST:
             if not artifact.media_url:
-                return HttpResponse("Áudio não disponível", status=404)
-            response = HttpResponse(status=302)
-            response['Location'] = artifact.media_url
-            return response
+                raise Http404("Audio file not available.")
+
+            # Construct absolute path
+            # artifact.media_url usually starts with /media/
+            # Remove /media/ prefix if present to join with MEDIA_ROOT
+            relative_path = artifact.media_url.lstrip('/')
+            if relative_path.startswith('media/'):
+                relative_path = relative_path[6:]
+
+            file_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+
+            if not os.path.exists(file_path):
+                logger.error(f"Podcast file not found at {file_path}")
+                raise Http404("File not found on server.")
+
+            return FileResponse(open(file_path, 'rb'), as_attachment=True, filename=f"{artifact.title}.mp3")
 
         # 2. SLIDES (PowerPoint .pptx)
         elif artifact.type == KnowledgeArtifact.ArtifactType.SLIDE:
             prs = Presentation()
-
             content = artifact.content if isinstance(artifact.content, list) else []
 
             for page in content:
                 if not isinstance(page, dict): continue
-
-                # Escolhe layout: 1 = Title and Content
                 slide_layout = prs.slide_layouts[1]
                 slide = prs.slides.add_slide(slide_layout)
-
-                # Título
                 title = slide.shapes.title
-                if title:
-                    title.text = page.get('title', 'Sem Título')
-
-                # Bullets
+                if title: title.text = page.get('title', 'Sem Título')
                 body_shape = slide.placeholders[1]
                 tf = body_shape.text_frame
-
                 bullets = page.get('bullets', [])
                 if bullets:
                     if isinstance(bullets, list):
                         if len(bullets) > 0:
-                            tf.text = bullets[0] # Primeiro bullet
+                            tf.text = bullets[0]
                             for b in bullets[1:]:
                                 p = tf.add_paragraph()
                                 p.text = b
@@ -318,21 +327,14 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             output = io.BytesIO()
             prs.save(output)
             output.seek(0)
-
-            response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.presentationml.presentation')
-            response['Content-Disposition'] = f'attachment; filename="{artifact.title}.pptx"'
-            return response
+            return FileResponse(output, as_attachment=True, filename=f"{artifact.title}.pptx")
 
         # 3. SPREADSHEET (Excel .xlsx)
         elif artifact.type == KnowledgeArtifact.ArtifactType.SPREADSHEET:
             wb = ExcelWorkbook()
             ws = wb.active
             ws.title = "Dados"
-
-            # Cabeçalho
             ws.append(["Título", "Conteúdo"])
-
-            # Se for lista, tenta iterar
             if isinstance(artifact.content, list):
                 for item in artifact.content:
                     ws.append([str(item)])
@@ -342,16 +344,25 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             output = io.BytesIO()
             wb.save(output)
             output.seek(0)
-
-            response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            response['Content-Disposition'] = f'attachment; filename="{artifact.title}.xlsx"'
-            return response
+            return FileResponse(output, as_attachment=True, filename=f"{artifact.title}.xlsx")
 
         # 4. DOCUMENTOS RICOS (PDF via HTML)
         else:
             context = {'artifact': artifact, 'content': artifact.content}
             html_string = render_to_string('studio/pdf_template.html', context)
-            response = HttpResponse(content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="{artifact.title}.pdf"'
-            HTML(string=html_string).write_pdf(response)
-            return response
+            pdf_file = io.BytesIO()
+            HTML(string=html_string).write_pdf(pdf_file)
+            pdf_file.seek(0)
+            return FileResponse(pdf_file, as_attachment=True, filename=f"{artifact.title}.pdf")
+
+    # Keep export for backward compatibility if needed, but alias to download logic where possible
+    # or modify it to use download logic.
+    # Given the prompt, I'll remove the old export logic to enforce secure download via the new endpoint,
+    # OR redirect to the new endpoint logic.
+    # I will remove 'export' to avoid code duplication and confusion, as 'download' covers it.
+    # If the frontend relies on 'export', I should keep the name or update frontend.
+    # Assuming backend task only, I'll alias export to download for now to be safe.
+
+    @action(detail=True, methods=['get'])
+    def export(self, request, pk=None):
+        return self.download(request, pk)
