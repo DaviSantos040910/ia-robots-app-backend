@@ -98,7 +98,7 @@ def _generate_standard_artifact(artifact, full_context, options):
     model_name = GENAI_MODEL_TEXT
 
     bot_prompt = artifact.chat.bot.prompt if artifact.chat.bot and artifact.chat.bot.prompt else None
-    system_instruction, response_schema = _build_prompt_and_schema(
+    system_instruction, response_schema = _build_artifact_system_instruction(
         artifact.type,
         artifact.title,
         full_context,
@@ -117,60 +117,94 @@ def _generate_standard_artifact(artifact, full_context, options):
     if response_schema:
         generate_config.response_schema = response_schema
 
-    response = client.models.generate_content(
-        model=model_name,
-        contents="Generate the artifact content based on the system instructions and context.",
-        config=generate_config
-    )
+    # Implement Retry Logic for JSON
+    max_retries = 2
+    last_error = None
 
-    if response.parsed:
-        artifact.content = response.parsed
-    else:
+    for attempt in range(max_retries):
         try:
-            artifact.content = json.loads(response.text)
-        except:
-             if artifact.type == KnowledgeArtifact.ArtifactType.SUMMARY:
-                 artifact.content = {"summary": response.text}
-             else:
-                 raise ValueError("Failed to parse JSON response")
+            response = client.models.generate_content(
+                model=model_name,
+                contents="Generate the artifact content based on the system instructions and context.",
+                config=generate_config
+            )
 
-def _build_prompt_and_schema(artifact_type, title, context, options, bot_prompt=None):
+            if response.parsed:
+                artifact.content = response.parsed
+                return # Success
+            else:
+                try:
+                    artifact.content = json.loads(response.text)
+                    return # Success
+                except json.JSONDecodeError:
+                     if artifact.type == KnowledgeArtifact.ArtifactType.SUMMARY:
+                         artifact.content = {"summary": response.text}
+                         return # Success (Fallback for summary)
+                     else:
+                         raise ValueError("Failed to parse JSON response")
+        except Exception as e:
+            logger.warning(f"[{artifact.correlation_id}] Attempt {attempt+1}/{max_retries} failed: {e}")
+            last_error = e
+            time.sleep(1) # Wait briefly before retry
+
+    # If loop finishes without return, raise the last error
+    if last_error:
+        raise last_error
+    else:
+        raise ValueError("Failed to generate valid artifact content after retries.")
+
+
+def _build_artifact_system_instruction(artifact_type, title, context, options, bot_prompt=None):
     difficulty = options.get('difficulty', 'Medium')
     quantity = options.get('quantity', 10)
     instructions = options.get('custom_instructions', '')
 
-    base_instruction = (
+    # 1. STYLE / PERSONA
+    persona_section = ""
+    if bot_prompt:
+        persona_section = (
+            f"YOUR PERSONALITY/ROLE:\n{bot_prompt}\n"
+            "Adopt this persona for the tone and style of the explanation."
+        )
+
+    # 2. TASK DEFINITION
+    task_section = (
         f"You are an expert educational content generator. "
         f"Create a {artifact_type} titled '{title}'.\n"
         f"Language: Detect the language from the context (default to Portuguese if unclear).\n"
         f"Target Audience Difficulty: {difficulty}.\n"
     )
-
-    if bot_prompt:
-            base_instruction += f"\nYOUR PERSONALITY/ROLE:\n{bot_prompt}\n"
-            base_instruction += "Adopt this persona for the tone and style of the content, but STRICTLY use the provided Context Material for facts.\n"
-
     if instructions:
-        base_instruction += f"CUSTOM INSTRUCTIONS:\n{instructions}\n"
+        task_section += f"CUSTOM INSTRUCTIONS:\n{instructions}\n"
 
-    base_instruction += f"\nCONTEXT MATERIAL (Source Files Only):\n{context}\n"
-
+    # Schema Selection
     schema = None
-
     if artifact_type == KnowledgeArtifact.ArtifactType.QUIZ:
-        base_instruction += f"Generate exactly {quantity} questions."
+        task_section += f"Generate exactly {quantity} questions."
         schema = QUIZ_SCHEMA
-
     elif artifact_type == KnowledgeArtifact.ArtifactType.FLASHCARD:
-        base_instruction += f"Generate exactly {quantity} cards."
+        task_section += f"Generate exactly {quantity} cards."
         schema = FLASHCARD_SCHEMA
-
     elif artifact_type == KnowledgeArtifact.ArtifactType.SUMMARY:
-        base_instruction += "Generate a comprehensive summary and key points."
+        task_section += "Generate a comprehensive summary and key points."
         schema = SUMMARY_SCHEMA
-
     elif artifact_type == KnowledgeArtifact.ArtifactType.SLIDE:
-        base_instruction += f"Generate exactly {quantity} slides."
+        task_section += f"Generate exactly {quantity} slides."
         schema = SLIDE_SCHEMA
 
-    return base_instruction, schema
+    # 3. FACT POLICY (HARD CONSTRAINTS)
+    fact_policy = (
+        "FACT POLICY (STRICT RULES):\n"
+        "- USE ONLY THE PROVIDED CONTEXT MATERIAL FOR FACTS.\n"
+        "- DO NOT INVENT DATA OR HALLUCINATE INFORMATION NOT PRESENT IN THE SOURCE.\n"
+        "- IF THE CONTEXT IS INSUFFICIENT, STATE THAT CLEARLY IN THE CONTENT INSTEAD OF INVENTING.\n"
+        "- OUTPUT MUST MATCH THE JSON SCHEMA EXACTLY.\n"
+    )
+
+    # 4. CONTEXT
+    context_section = f"\nCONTEXT MATERIAL (Source Files Only):\n{context}\n"
+
+    # Combine Sections
+    full_instruction = f"{persona_section}\n\n{task_section}\n\n{fact_policy}\n\n{context_section}"
+
+    return full_instruction, schema
