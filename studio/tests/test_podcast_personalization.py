@@ -16,7 +16,7 @@ class PodcastPersonalizationTest(TestCase):
             "episode_title": "Lesson 1",
             "episode_summary": "Summary",
             "chapters": [],
-            "dialogue": [{"speaker": "Host (Tutor)", "text": "Hello"}]
+            "dialogue": [{"speaker": "HOST", "display_name": "Host (Tutor)", "text": "Hello"}]
         }
         mock_client.models.generate_content.return_value = mock_response
 
@@ -31,15 +31,15 @@ class PodcastPersonalizationTest(TestCase):
         # Assertions
         self.assertIsInstance(script, dict)
         self.assertIn('dialogue', script)
-        self.assertEqual(script['dialogue'][0]['speaker'], "Host (Tutor)")
+        self.assertEqual(script['dialogue'][0]['speaker'], "HOST")
 
         # Check Prompt Construction
         call_args = mock_client.models.generate_content.call_args
         prompt = call_args.kwargs['contents']
 
-        self.assertIn("Host (Tutor)", prompt)
+        self.assertIn("HOST (Host (Tutor))", prompt)
         self.assertIn("Be funny", prompt)
-        self.assertIn("Co-host", prompt)
+        self.assertIn("COHOST", prompt)
 
     @patch('studio.services.audio_mixer.generate_tts_audio')
     @patch('studio.services.audio_mixer.tempfile.NamedTemporaryFile')

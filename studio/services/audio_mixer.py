@@ -34,10 +34,11 @@ class AudioMixerService:
         host_voice = get_gemini_voice(bot_voice_enum)
         cohost_voice = "Fenrir" # Fixed generic co-host
 
-        def get_voice_for_speaker(speaker_name):
-            if speaker_name.startswith("Host"):
+        def get_voice_for_speaker(speaker_val):
+            # Maps from schema ENUM or legacy display name
+            if speaker_val == "HOST" or (isinstance(speaker_val, str) and speaker_val.upper().startswith("HOST")):
                 return host_voice
-            elif speaker_name == "Co-host":
+            elif speaker_val == "COHOST" or speaker_val == "Co-host":
                 return cohost_voice
             return host_voice # Fallback
 

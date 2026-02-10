@@ -16,22 +16,21 @@ class PodcastScriptingService:
         client = get_ai_client()
         model_name = GENAI_MODEL_TEXT
 
-        host_name = f"Host ({bot_name})"
-        cohost_name = "Co-host"
+        host_display = f"Host ({bot_name})"
 
-        # Define Schema with Dynamic Host Name
+        # Define Final Schema (NotebookLM-like)
         script_schema = types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "episode_title": types.Schema(type=types.Type.STRING, description="Catchy title for the episode"),
-                "episode_summary": types.Schema(type=types.Type.STRING, description="Brief summary (2-4 lines)"),
+                "episode_title": types.Schema(type=types.Type.STRING, description="Catchy title (4-80 chars)"),
+                "episode_summary": types.Schema(type=types.Type.STRING, description="Brief summary (2-4 lines, no markdown)"),
                 "chapters": types.Schema(
                     type=types.Type.ARRAY,
                     items=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
                             "title": types.Schema(type=types.Type.STRING),
-                            "start_turn_index": types.Schema(type=types.Type.INTEGER, description="Index of the dialogue turn where chapter starts")
+                            "start_turn_index": types.Schema(type=types.Type.INTEGER)
                         }
                     )
                 ),
@@ -40,25 +39,26 @@ class PodcastScriptingService:
                     items=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
-                            "speaker": types.Schema(type=types.Type.STRING, enum=[host_name, cohost_name]),
+                            "speaker": types.Schema(type=types.Type.STRING, enum=["HOST", "COHOST"]),
+                            "display_name": types.Schema(type=types.Type.STRING),
                             "text": types.Schema(type=types.Type.STRING)
                         },
                         required=["speaker", "text"]
                     )
                 )
             },
-            required=["episode_title", "episode_summary", "dialogue"]
+            required=["episode_title", "episode_summary", "chapters", "dialogue"]
         )
 
         # 1. STYLE / PERSONA
         persona_instruction = ""
         if bot_prompt:
-            persona_instruction = f"HOST PERSONA ({host_name}):\n{bot_prompt}\nAdopt this persona for the Host's tone and style.\n"
+            persona_instruction = f"HOST PERSONA:\n{bot_prompt}\nAdopt this persona for the Host's tone and style.\n"
 
         style_block = (
             f"STYLE & ROLES:\n"
-            f"- {host_name}: The expert/guide. {persona_instruction}\n"
-            f"- {cohost_name}: The curious, insightful interviewer who asks questions to clarity content.\n"
+            f"- HOST ({host_display}): The expert/guide. {persona_instruction}\n"
+            f"- COHOST: The curious, insightful interviewer who asks questions to clarify content.\n"
             f"- Tone: Conversational, deep dive, slightly informal but professional. NotebookLM style.\n"
             f"- Language: Portuguese (unless context strongly implies English).\n"
             f"- Duration Context: {duration_constraint}.\n"
