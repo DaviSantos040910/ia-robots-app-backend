@@ -33,6 +33,8 @@ from .context_builder import (
     get_recent_attachment_context
 )
 from .strict_style_service import strict_style_service
+from .strict_boundary import strict_boundary, ResponseMode
+from .source_service import source_service
 from .memory_service import process_memory_background
 from .tts_service import generate_tts_audio
 from .transcription_service import transcribe_audio_gemini
@@ -57,10 +59,10 @@ def _detect_lang(text: str) -> str:
         return "es"
 
     # Portuguese heuristics
-    pt_markers = ["você", "não", "por que", "onde", "fonte", "fontes", "documento", "documentos", "tutor", "quais", "quem", "qual"]
+    pt_markers = ["você", "não", "por que", "onde", "fonte", "fontes", "documento", "documentos", "tutor", "quais", "quem", r"\bqual\b"]
     # Check whole words for some markers to avoid false positives (e.g. 'none' containing 'on')
     # Simple check is usually enough given the distinct markers
-    if any(m in text for m in pt_markers):
+    if any(re.search(m, text) if r"\b" in m else m in text for m in pt_markers):
         return "pt"
 
     # Default to English
@@ -500,62 +502,73 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
     SEPARATOR_LEN = len(SEPARATOR)
     CHUNK_DELAY = 0.03
 
+    # 1. Fetch Real Bot State (No Cache)
     chat = Chat.objects.select_related('bot', 'user').get(id=chat_id, user_id=user_id)
+    # Refresh bot from DB to get latest flags
+    chat.bot.refresh_from_db()
     bot = chat.bot
 
     allow_web_search = getattr(bot, 'allow_web_search', False)
     strict_context = getattr(bot, 'strict_context', False)
 
-    # 1. Yield Start
+    # Yield Start
     yield f"data: {json.dumps({'type': 'start', 'status': 'processing'})}\n\n"
 
     try:
-        # --- Context Retrieval ---
-        user_defined_prompt = bot.prompt.strip() if bot.prompt else "Você é um assistente útil."
         user_name = chat.user.first_name if chat.user.first_name else "Usuário"
-        current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
-
-        gemini_history, _ = build_conversation_history(chat_id, limit=10)
         study_space_ids = list(bot.study_spaces.values_list('id', flat=True))
 
-        doc_contexts, memory_contexts, available_docs = _get_smart_context(
-            query=user_message_text,
+        # 2. Strict Boundary Decision (Centralized)
+        mode, doc_contexts, best_score, reason = strict_boundary.decide_response_mode(
+            user_text=user_message_text,
+            strict_context=strict_context,
+            allow_web_search=allow_web_search,
             user_id=chat.user_id,
             bot_id=bot.id,
-            chat_id=chat_id,
             study_space_ids=study_space_ids
         )
 
-        logger.info(f"[Stream] Context: {len(doc_contexts)} chunks, Strict: {strict_context}")
+        logger.info(f"[Decision] Chat {chat_id} | Mode: {mode.value} | Reason: {reason}")
 
-        # Format Contexts
-        formatted_doc_contexts = []
-        source_map = {}
-        if doc_contexts:
-            for chunk in doc_contexts:
-                s_id = chunk.get('source_id') or chunk.get('source')
-                s_title = chunk.get('source', 'Documento')
-                if s_id not in source_map:
-                    source_map[s_id] = {'index': len(source_map) + 1, 'title': s_title}
-                s_idx = source_map[s_id]['index']
-                formatted_doc_contexts.append(f"[{s_idx}] {s_title}\n{chunk['content']}")
-
-        # --- DECISION BLOCK ---
+        # Common Prep
+        available_docs = vector_service.get_available_documents(user_id, bot.id, study_space_ids)
         
-        # CASE 1: Strict ON + NO Context
-        if strict_context and not doc_contexts:
-            logger.info("[Stream] Strict Mode + No Context -> Immediate Refusal")
+        # --- BRANCH 1: LIST SOURCES ---
+        if mode == ResponseMode.LIST_SOURCES:
+            source_text = source_service.list_available_sources_for_bot(bot.id, user_id, study_space_ids)
+            # Optional: Style rewrite? For now, static is safer and faster.
+            # If we want style, call strict_style_service.rewrite_sources_list here.
 
-            # Use deterministic strict refusal with Style Rewriter
-            base_refusal = _build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_docs))
+            ai_message = ChatMessage.objects.create(
+                chat=chat,
+                role=ChatMessage.Role.ASSISTANT,
+                content=source_text,
+                sources=[]
+            )
+            chat.last_message_at = timezone.now()
+            chat.save()
+
+            end_payload = {
+                'type': 'end',
+                'message_id': ai_message.id,
+                'clean_content': source_text,
+                'suggestions': [],
+                'sources': []
+            }
+            yield f"data: {json.dumps(end_payload)}\n\n"
+            return
+
+        # --- BRANCH 2: STRICT REFUSAL (Zero LLM) ---
+        elif mode == ResponseMode.STRICT_REFUSAL:
+            base_refusal = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_docs))
+            # Style Rewrite (Optional but requested for "Dar vida")
             refusal_text = strict_style_service.rewrite_strict_refusal(
                 base_refusal,
-                bot.prompt, # Persona
+                bot.prompt,
                 bot.name,
                 _detect_lang(user_message_text)
             )
 
-            # Create final message immediately (No stream)
             ai_message = ChatMessage.objects.create(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
@@ -565,7 +578,6 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             chat.last_message_at = timezone.now()
             chat.save()
 
-            # Send End Event
             end_payload = {
                 'type': 'end',
                 'message_id': ai_message.id,
@@ -576,31 +588,44 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             yield f"data: {json.dumps(end_payload)}\n\n"
             return
 
-        # CASE 2: Strict ON + Context (Sync Generation + Pseudo-Stream)
-        elif strict_context and doc_contexts:
-            logger.info("[Stream] Strict Mode + Context -> Sync Generation + Citation Check")
+        # --- BRANCH 3: STRICT ANSWER (Sync + Validation) ---
+        elif mode == ResponseMode.STRICT_ANSWER_WITH_CONTEXT:
+            # Format Contexts
+            formatted_doc_contexts = []
+            source_map = {}
+            for chunk in doc_contexts:
+                s_id = chunk.get('source_id') or chunk.get('source')
+                s_title = chunk.get('source', 'Documento')
+                if s_id not in source_map:
+                    source_map[s_id] = {'index': len(source_map) + 1, 'title': s_title}
+                s_idx = source_map[s_id]['index']
+                formatted_doc_contexts.append(f"[{s_idx}] {s_title}\n{chunk['content']}")
+
+            # Build Prompt
+            gemini_history, _ = build_conversation_history(chat_id, limit=10)
+            current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
 
             system_instruction = build_system_instruction(
-                bot_prompt=user_defined_prompt,
+                bot_prompt=bot.prompt or "Você é um assistente útil.",
                 user_name=user_name,
                 doc_contexts=formatted_doc_contexts,
-                memory_contexts=memory_contexts,
+                memory_contexts=[], # Memory fetch inside strict boundary if needed, or here
                 current_time=current_time_str,
-                available_docs=available_docs,
-                allow_web_search=False, # Web Search disabled in Strict Mode always
+                available_docs=[d['source'] for d in available_docs],
+                allow_web_search=False,
                 strict_context=True
             )
-            
+
             config = types.GenerateContentConfig(
                 temperature=0.3,
                 max_output_tokens=3000,
                 system_instruction=system_instruction
             )
-            
+
             prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
             contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
-            # SYNC CALL
+            # Sync Call
             client = get_ai_client()
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -610,15 +635,17 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
 
             full_text = response.text if response.text else ""
 
-            # VALIDATE CITATION
+            # Validation
             has_citation = bool(re.search(r'\[\d+\]', full_text))
 
             if not has_citation:
-                logger.warning("[Stream] Strict Mode Guardrail: No citation found. Generating refusal.")
-                full_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=True)
+                logger.warning("[Strict] Answer rejected (No citation). Fallback to refusal.")
+                full_text = strict_boundary.build_strict_refusal(bot.name, user_message_text, has_any_sources=True)
                 source_map = {} # Clear sources
+                # Optional: Rewrite refusal style
+                full_text = strict_style_service.rewrite_strict_refusal(full_text, bot.prompt, bot.name, _detect_lang(user_message_text))
 
-            # Parse Suggestions (Sync)
+            # Parse Suggestions & Clean Content
             final_suggestions = []
             clean_content = full_text
             if SEPARATOR in full_text:
@@ -632,13 +659,6 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                     if isinstance(parsed, list):
                         final_suggestions = [str(s) for s in parsed][:3]
                 except: pass
-
-            # PSEUDO-STREAM CHUNKS
-            chunk_size = 300
-            for i in range(0, len(clean_content), chunk_size):
-                chunk = clean_content[i:i+chunk_size]
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                time.sleep(CHUNK_DELAY)
 
             # Extract Sources
             final_sources_list = []
@@ -654,14 +674,12 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                                 'type': 'file',
                                 'index': s_info['index']
                             }
-                # Safe processing of sources list
                 try:
                     final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
                 except Exception as e:
-                    logger.error(f"[Stream Sources Error] Failed to process sources list: {e}")
                     final_sources_list = []
 
-            # Save Message
+            # Save
             ai_message = ChatMessage.objects.create(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
@@ -673,11 +691,13 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             chat.last_message_at = timezone.now()
             chat.save()
 
-            # Metrics
-            metrics = _calculate_metrics(clean_content, available_docs)
-            _save_metrics(ai_message, metrics)
+            # Pseudo-Stream Chunks
+            chunk_size = 100
+            for i in range(0, len(clean_content), chunk_size):
+                chunk = clean_content[i:i+chunk_size]
+                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                time.sleep(CHUNK_DELAY)
 
-            # End Event
             end_payload = {
                 'type': 'end',
                 'message_id': ai_message.id,
@@ -687,7 +707,6 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             }
             yield f"data: {json.dumps(end_payload)}\n\n"
 
-            # Background Memory
             if len(clean_content) > 10:
                 threading.Thread(
                     target=process_memory_background,
@@ -695,59 +714,64 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                 ).start()
             return
 
-        # CASE 3: Strict OFF (Normal / Mixed) -> Real Stream
-        else:
-            logger.info("[Stream] Strict OFF -> Real Stream")
+        # --- BRANCH 4: NON-STRICT (Normal Stream) ---
+        else: # ResponseMode.NON_STRICT_WEB_OR_GENERAL
+            # Fetch context just in case (optional, but good for RAG even in normal mode)
+            # NOTE: decide_response_mode in non-strict doesn't fetch docs by default for perf?
+            # But the prompt expects docs if available.
+            # Let's fetch docs quickly or reuse if available?
+            # In non-strict, we usually want RAG too.
+            # Re-run search if not provided?
+            # Ideally strict_boundary should return context even for non-strict if it checked.
+            # But currently it returns empty for non-strict.
+            # Let's fetch standard RAG context here.
 
-            # Handle Mixed Mode Prompt Logic
-            if not doc_contexts and allow_web_search:
-                 mixed_prompt = (
-                     f"User Question: '{user_message_text}'\n\n"
-                     f"Your Personality: '{user_defined_prompt}'\n"
-                     "CONTEXT CHECK: You searched the user's documents but found NO matches.\n"
-                     "INSTRUCTION: You must answer using general knowledge/web search, but you MUST format it in two distinct blocks.\n\n"
-                     "TEMPLATE:\n"
-                     f"Nas suas fontes, não encontrei informações sobre {user_message_text}.\n\n"
-                     "Fora do contexto dos documentos, de forma geral:\n"
-                     "<Insert your helpful answer here based on general knowledge or web search>"
-                 )
-                 prompt_text = mixed_prompt
-                 # Pass empty doc_contexts to builder but allow web search
-                 system_instruction = build_system_instruction(
-                    bot_prompt=user_defined_prompt,
-                    user_name=user_name,
-                    doc_contexts=[],
-                    memory_contexts=memory_contexts,
-                    current_time=current_time_str,
-                    available_docs=available_docs,
-                    allow_web_search=True,
-                    strict_context=False
-                )
-            else:
-                 prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
-                 system_instruction = build_system_instruction(
-                    bot_prompt=user_defined_prompt,
-                    user_name=user_name,
-                    doc_contexts=formatted_doc_contexts,
-                    memory_contexts=memory_contexts,
-                    current_time=current_time_str,
-                    available_docs=available_docs,
-                    allow_web_search=allow_web_search,
-                    strict_context=strict_context
-                )
+            doc_contexts, memory_contexts, available_docs = _get_smart_context(
+                query=user_message_text,
+                user_id=chat.user_id,
+                bot_id=bot.id,
+                chat_id=chat_id,
+                study_space_ids=study_space_ids
+            )
 
-            contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
+            formatted_doc_contexts = []
+            source_map = {}
+            if doc_contexts:
+                for chunk in doc_contexts:
+                    s_id = chunk.get('source_id') or chunk.get('source')
+                    s_title = chunk.get('source', 'Documento')
+                    if s_id not in source_map:
+                        source_map[s_id] = {'index': len(source_map) + 1, 'title': s_title}
+                    s_idx = source_map[s_id]['index']
+                    formatted_doc_contexts.append(f"[{s_idx}] {s_title}\n{chunk['content']}")
+
+            gemini_history, _ = build_conversation_history(chat_id, limit=10)
+            current_time_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+            # Handle Web Search Logic (Mixed Mode fallback prompt logic removed for simplicity, using tools)
+            system_instruction = build_system_instruction(
+                bot_prompt=bot.prompt or "Você é um assistente útil.",
+                user_name=user_name,
+                doc_contexts=formatted_doc_contexts,
+                memory_contexts=memory_contexts,
+                current_time=current_time_str,
+                available_docs=[d['source'] for d in available_docs],
+                allow_web_search=allow_web_search,
+                strict_context=False
+            )
 
             config = types.GenerateContentConfig(
-                temperature=0.3 if doc_contexts else 0.7,
+                temperature=0.7,
                 max_output_tokens=3000,
                 system_instruction=system_instruction
             )
 
-            # Unified Tool Rule
-            use_search = allow_web_search and not strict_context
+            use_search = allow_web_search
             if use_search:
                  config.tools = [types.Tool(google_search=types.GoogleSearch())]
+
+            prompt_text = f"""{user_message_text}\n\n---\nSe possível, forneça sugestões de continuação usando o formato |||SUGGESTIONS||| definido no system prompt."""
+            contents = gemini_history + [{"role": "user", "parts": [{"text": prompt_text}]}]
 
             # STREAM CALL
             stream = generate_content_stream(contents, config, use_google_search=use_search)
@@ -759,52 +783,28 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
 
             for text_chunk in stream:
                 if not isinstance(text_chunk, str) or not text_chunk: continue
-
                 buffer += text_chunk
 
-                # Check for suggestions separator
-                # "Só tratar como sugestões se: estiver nas últimas 800–1200 chars OU após \n\n---\n"
-
                 if not is_collecting_suggestions and SEPARATOR in buffer:
+                    # Valid if near end (trust unique token)
+                    # Split buffer
                     parts = buffer.split(SEPARATOR)
                     text_part = parts[0]
                     suggestion_part = "".join(parts[1:])
 
-                    total_so_far = full_clean_content + text_part
-
-                    # Logic: We trust the unique separator token.
-                    # Checking for \n\n---\n is risky if model doesn't echo it.
-                    is_valid_position = True
-
-                    if is_valid_position:
-                         # Valid Separator
-                        if text_part:
-                            full_clean_content += text_part
-                            yield f"data: {json.dumps({'type': 'chunk', 'text': text_part})}\n\n"
-                            time.sleep(CHUNK_DELAY)
-
-                        is_collecting_suggestions = True
-                        suggestions_json_str = suggestion_part
-                        buffer = ""
-
-                    else:
-                        # Invalid Separator (Middle of text without proper context) -> Treat as text
-                        # Don't switch mode, just flush buffer partially or normally
-                        # Since `buffer` contains `SEPARATOR`, we can't just keep it in buffer forever.
-                        # We should flush what we have as text.
-                        # However, we must be careful not to double flush if SEPARATOR is partial.
-                        # But `SEPARATOR in buffer` means we have the full separator.
-                        # So we flush the whole buffer as text.
-                        full_clean_content += buffer
-                        yield f"data: {json.dumps({'type': 'chunk', 'text': buffer})}\n\n"
+                    if text_part:
+                        full_clean_content += text_part
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': text_part})}\n\n"
                         time.sleep(CHUNK_DELAY)
-                        buffer = ""
+
+                    is_collecting_suggestions = True
+                    suggestions_json_str = suggestion_part
+                    buffer = ""
 
                 elif is_collecting_suggestions:
                     suggestions_json_str += buffer
                     buffer = ""
                 else:
-                    # Safe buffer flush
                     if len(buffer) > SEPARATOR_LEN:
                         safe_chunk = buffer[:-SEPARATOR_LEN]
                         buffer = buffer[-SEPARATOR_LEN:]
@@ -812,12 +812,10 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                         yield f"data: {json.dumps({'type': 'chunk', 'text': safe_chunk})}\n\n"
                         time.sleep(CHUNK_DELAY)
 
-            # Finalize Stream
             if buffer and not is_collecting_suggestions:
                 full_clean_content += buffer
                 yield f"data: {json.dumps({'type': 'chunk', 'text': buffer})}\n\n"
 
-            # Parse Suggestions (with fallback for mid-stream hallucination)
             final_suggestions = []
             if suggestions_json_str:
                 try:
@@ -826,18 +824,14 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                     parsed = json.loads(s_json)
                     if isinstance(parsed, list):
                         final_suggestions = [str(s) for s in parsed][:3]
-                    else:
-                        raise ValueError("Not a list")
-                except Exception:
-                    # Fallback: If parsing fails, it was likely hallucinated text in the middle.
-                    # We append the separator and the raw text back to content.
-                    logger.warning("[Stream] Suggestion parsing failed, treating as normal text.")
-                    recovered_text = SEPARATOR + suggestions_json_str
-                    full_clean_content += recovered_text
-                    # Yield the recovered text so the user sees it
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': recovered_text})}\n\n"
+                    else: raise ValueError
+                except:
+                    # Fallback for mid-stream hallucination
+                    recov = SEPARATOR + suggestions_json_str
+                    full_clean_content += recov
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': recov})}\n\n"
 
-            # Extract Sources (Standard Flow)
+            # Extract Sources
             final_sources_list = []
             if source_map:
                 used_indices = set(re.findall(r'\[(\d+)\]', full_clean_content))
@@ -851,14 +845,10 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
                                 'type': 'file',
                                 'index': s_info['index']
                             }
-                # Safe processing of sources list
                 try:
                     final_sources_list = sorted(unique_sources.values(), key=lambda x: x['index'])
-                except Exception as e:
-                    logger.error(f"[Stream Sources Error] Failed to process sources list: {e}")
-                    final_sources_list = []
+                except: final_sources_list = []
 
-            # Save
             ai_message = ChatMessage.objects.create(
                 chat=chat,
                 role=ChatMessage.Role.ASSISTANT,
@@ -870,11 +860,6 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             chat.last_message_at = timezone.now()
             chat.save()
 
-            # Metrics
-            metrics = _calculate_metrics(full_clean_content, available_docs)
-            _save_metrics(ai_message, metrics)
-
-            # End Event
             end_payload = {
                 'type': 'end',
                 'message_id': ai_message.id,
@@ -884,7 +869,6 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
             }
             yield f"data: {json.dumps(end_payload)}\n\n"
 
-            # Background Memory
             if len(full_clean_content) > 10:
                 threading.Thread(
                     target=process_memory_background,

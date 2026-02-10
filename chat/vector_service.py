@@ -52,7 +52,6 @@ class VectorService:
 
             self.client = chromadb.PersistentClient(path=db_path)
             # Use new collection name to force 3072 dimension
-            # Old collection "chat_memory" (768) is abandoned but kept for safety
             self.collection = self.client.get_or_create_collection(
                 name="chat_memory_3072",
                 metadata={"hnsw:space": "cosine"}
@@ -67,7 +66,6 @@ class VectorService:
         if not text or len(text.strip()) < 3:
             return None
 
-        # Prioritize gemini-embedding-001 as per stable docs
         models_to_try = ["models/gemini-embedding-001", "gemini-embedding-001", "text-embedding-004"]
 
         for model in models_to_try:
@@ -81,13 +79,11 @@ class VectorService:
                     return response.embeddings[0].values
             except Exception as e:
                 if "404" in str(e) or "NOT_FOUND" in str(e):
-                    logger.warning(f"Embedding model '{model}' not found. Trying next...")
                     continue
                 else:
                     logger.error(f"Erro ao gerar embedding com {model}: {e}")
                     return None
 
-        logger.error("Todos os modelos de embedding falharam.")
         return None
 
     # =========================================================================
@@ -174,7 +170,6 @@ class VectorService:
             embeds.append(embedding)
             ids.append(str(uuid.uuid4()))
             
-            # Constrói metadados com todos os campos solicitados
             meta = {
                 'user_id': str(user_id),
                 'type': 'document',
@@ -188,7 +183,6 @@ class VectorService:
                 'message_id': str(message_id) if message_id else ''
             }
             
-            # Campos opcionais para filtro
             if bot_id is not None:
                 meta['bot_id'] = str(bot_id)
             else:
@@ -215,24 +209,15 @@ class VectorService:
     # =========================================================================
 
     def classify_query(self, query: str, available_sources: List[str]) -> Tuple[QueryType, Optional[str]]:
-        """
-        Classifica o tipo de query e extrai documento específico se mencionado.
-
-        Returns:
-            Tuple: (QueryType, nome_do_documento_se_especificado)
-        """
+        """Classifica o tipo de query."""
         query_lower = query.lower()
 
-        # 1. Verifica se menciona documento específico pelo nome
         for source in available_sources:
             source_lower = source.lower()
-            # Remove extensão para comparação mais flexível
             source_base = os.path.splitext(source_lower)[0]
-
             if source_lower in query_lower or source_base in query_lower:
                 return QueryType.SPECIFIC, source
 
-        # 2. Detecta queries comparativas
         comparative_patterns = [
             r'\b(compare|comparar|diferença|diferente|versus|vs\.?|entre os)\b',
             r'\b(os dois|ambos|os documentos|os arquivos)\b',
@@ -241,7 +226,6 @@ class VectorService:
         if any(re.search(p, query_lower) for p in comparative_patterns):
             return QueryType.COMPARATIVE, None
 
-        # 3. Detecta referências pronominais (documento mais recente)
         reference_patterns = [
             r'\b(isso|isto|esse|este|essa|esta)\b',
             r'\b(esse|este|o)\s+(documento|arquivo|pdf|texto)\b',
@@ -252,7 +236,6 @@ class VectorService:
         if any(re.search(p, query_lower) for p in reference_patterns):
             return QueryType.REFERENCE, None
 
-        # 4. Query geral - busca em todos os documentos
         return QueryType.GENERAL, None
 
     def get_available_documents(
@@ -261,16 +244,11 @@ class VectorService:
         bot_id: int, 
         study_space_ids: Optional[List[int]] = None
     ) -> List[Dict]:
-        """
-        Lista todos os documentos disponíveis para o usuário/bot/espaços.
-        """
+        """Lista todos os documentos disponíveis."""
         if not self.collection:
             return []
 
-        # 1. Construir lista de condições OR
         or_list = [{"bot_id": str(bot_id)}]
-        
-        # Inclusão de bot_id='0' (Biblioteca Global) para consistência
         if str(bot_id) != "0":
             or_list.append({"bot_id": "0"})
 
@@ -278,10 +256,8 @@ class VectorService:
             for sid in study_space_ids:
                  or_list.append({"study_space_id": str(sid)})
 
-        # 2. Usar helper seguro para o OR
         scope_condition = self._safe_or(or_list)
 
-        # 3. Construir lista de condições AND
         and_list = [
             {"user_id": str(user_id)},
             {"type": "document"}
@@ -289,38 +265,26 @@ class VectorService:
         if scope_condition:
             and_list.append(scope_condition)
 
-        # 4. Usar helper seguro para o AND (where final)
         where_clause = self._safe_and(and_list)
-
-        self._log_debug("get_available_documents where:", where_clause)
         
         try:
-            results = self.collection.get(
-                where=where_clause,
-                include=["metadatas"]
-            )
-
+            results = self.collection.get(where=where_clause, include=["metadatas"])
             if not results or not results['metadatas']:
                 return []
 
-            # Agrupa por source e pega o timestamp mais recente de cada
             docs_map = {}
             for meta in results['metadatas']:
                 source = meta.get('source', '')
                 timestamp = meta.get('timestamp', '')
-
                 if source and (source not in docs_map or timestamp > docs_map[source]):
                     docs_map[source] = timestamp
 
-            # Ordena por timestamp (mais recente primeiro)
             sorted_docs = sorted(
                 [{'source': s, 'timestamp': t} for s, t in docs_map.items()],
                 key=lambda x: x['timestamp'],
                 reverse=True
             )
-
             return sorted_docs
-
         except Exception as e:
             logger.error(f"Erro ao listar documentos: {e}")
             return []
@@ -337,55 +301,39 @@ class VectorService:
         study_space_ids: Optional[List[int]] = None,
         limit: int = 6,
         recent_doc_source: Optional[str] = None,
-        allowed_source_ids: Optional[List[str]] = None, # Changed from allowed_sources
-        allowed_sources: Optional[List[str]] = None # Deprecated but kept for compatibility
+        allowed_source_ids: Optional[List[str]] = None,
+        allowed_sources: Optional[List[str]] = None
     ) -> Tuple[List[Dict], List[str]]:
         """
-        Busca inteligente com suporte a múltiplos documentos e filtro opcional por ID.
+        Busca inteligente com suporte a múltiplos documentos.
+        Returns: (doc_contexts, memory_contexts)
+        doc_contexts includes 'score' now.
         """
         if not self.collection:
             return [], []
 
         try:
-            # 1. Lista documentos disponíveis (apenas para logging/debug)
-            # available_docs = self.get_available_documents(user_id, bot_id, study_space_ids)
-            # available_sources = [d['source'] for d in available_docs]
-
-            # 2. Classifica a query (ainda usa nomes para "inteligência" de linguagem natural)
-            # Para isso, precisamos dos nomes disponíveis no contexto permitido.
-            # Se allowed_source_ids for fornecido, filtramos os nomes.
-            
-            # TODO: Otimizar para não buscar todos docs se tivermos IDs
             available_docs = self.get_available_documents(user_id, bot_id, study_space_ids)
             
             # Filtra por ID se fornecido
             if allowed_source_ids:
-                # available_docs não retorna IDs nos metadados completos por padrão no get_available_documents atual?
-                # O metodo get_available_documents retorna dict com 'source' e 'timestamp'.
-                # Precisamos atualizar get_available_documents para retornar source_id também se quisermos filtrar aqui.
-                # Mas o filtro real acontece na query do Chroma.
+                # Otimização futura: filtrar antes
                 pass 
 
             available_sources = [d['source'] for d in available_docs]
             
-            logger.info(f"[RAG] Documentos considerados: {len(available_sources)}")
-
-            # 2. Classifica a query
             query_type, specific_doc = self.classify_query(query_text, available_sources)
             logger.info(f"[RAG] Tipo de query: {query_type.value}, Doc específico: {specific_doc}")
 
-            # 3. Executa estratégia de busca apropriada
+            doc_contexts = []
             if query_type == QueryType.SPECIFIC and specific_doc:
-                # Se for específico, buscamos pelo nome (source) E aplicamos filtros de ID se houver
                 doc_contexts = self._search_specific_document(
                     query_text, user_id, bot_id, specific_doc, limit, study_space_ids, allowed_source_ids
                 )
             elif query_type == QueryType.REFERENCE:
                 target_source = recent_doc_source
-                # Validação simples do target_source
                 if target_source and target_source not in available_sources:
                     target_source = None
-
                 if not target_source and available_sources:
                     target_source = available_sources[0]
 
@@ -401,7 +349,6 @@ class VectorService:
                     query_text, user_id, bot_id, limit, allowed_source_ids, study_space_ids
                 )
 
-            # 4. Busca memórias (sempre complementar)
             memory_contexts = self._search_memories(query_text, user_id, bot_id, limit=3)
 
             return doc_contexts, memory_contexts
@@ -411,7 +358,6 @@ class VectorService:
             return [], []
 
     def _build_or_filter(self, user_id: int, bot_id: int, study_space_ids: Optional[List[int]]) -> dict:
-        # Include current bot ID AND '0' (User Library/Global) in scope
         or_list = [
             {"bot_id": str(bot_id)},
             {"bot_id": "0"} 
@@ -439,29 +385,20 @@ class VectorService:
         if not embedding:
             return []
         
-        # Recupera o filtro base (AND)
         where_clause = self._build_or_filter(user_id, bot_id, study_space_ids)
         
-        # Como _build_or_filter retorna um dict seguro, se ele já tiver um $and, adicionamos a ele
-        # Se for uma condição única (raro aqui pois temos user+type+scope), transformamos em $and
-        
-        # Normalização para lista de condições
         if "$and" in where_clause:
             and_conditions = where_clause["$and"]
         else:
-            # Caso raro onde _safe_and retornou condição única ou vazia
             and_conditions = [where_clause] if where_clause else []
 
         and_conditions.append({"source": source})
         
         if allowed_source_ids:
-            # $in operator handling
             and_conditions.append({"source_id": {"$in": allowed_source_ids}})
 
         final_where = {"$and": and_conditions}
         
-        self._log_debug("_search_specific where:", final_where)
-
         results = self.collection.query(
             query_embeddings=[embedding],
             n_results=limit,
@@ -473,9 +410,7 @@ class VectorService:
     def _search_comparative(
         self, query: str, user_id: int, bot_id: int, sources: List[str], limit: int, study_space_ids: Optional[List[int]] = None, allowed_source_ids: Optional[List[str]] = None
     ) -> List[Dict]:
-        """
-        Busca comparativa - garante resultados de múltiplos documentos.
-        """
+        """Busca comparativa."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
             return []
@@ -483,8 +418,7 @@ class VectorService:
         all_results = []
         per_doc_limit = max(2, limit // len(sources)) if sources else limit
 
-        for source in sources[:4]:  # Máximo 4 documentos para comparação
-            # Reconstroi o filtro base para cada iteração para não acumular
+        for source in sources[:4]:
             where_clause = self._build_or_filter(user_id, bot_id, study_space_ids)
             
             if "$and" in where_clause:
@@ -498,7 +432,6 @@ class VectorService:
                 and_conditions.append({"source_id": {"$in": allowed_source_ids}})
             
             final_where = {"$and": and_conditions}
-            self._log_debug(f"_search_comparative ({source}) where:", final_where)
 
             results = self.collection.query(
                 query_embeddings=[embedding],
@@ -512,10 +445,7 @@ class VectorService:
     def _search_general(
         self, query: str, user_id: int, bot_id: int, limit: int, allowed_source_ids: Optional[List[str]] = None, study_space_ids: Optional[List[int]] = None
     ) -> List[Dict]:
-        """
-        Busca geral com diversificação de fontes (Reranking).
-        Garante pelo menos 1 chunk por documento relevante quando possível.
-        """
+        """Busca geral com diversificação e pontuação."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
             return []
@@ -523,7 +453,6 @@ class VectorService:
         where_clause = self._build_or_filter(user_id, bot_id, study_space_ids)
 
         if allowed_source_ids is not None:
-            # Precisamos adicionar ao $and existente ou criar um
             if "$and" in where_clause:
                 and_conditions = where_clause["$and"]
             else:
@@ -532,12 +461,9 @@ class VectorService:
             if len(allowed_source_ids) > 0:
                 and_conditions.append({"source_id": {"$in": allowed_source_ids}})
             else:
-                # Se lista vazia foi passada explicitamente, não retorna nada
                 return []
             
             where_clause = {"$and": and_conditions}
-
-        self._log_debug("_search_general where:", where_clause)
 
         # Fetch candidates (3x limit) para reranking
         fetch_k = limit * 3
@@ -564,35 +490,22 @@ class VectorService:
                 'source': metas[i].get('source', 'Unknown')
             })
 
-        # Sort by distance (lower is better in Chroma)
         candidates.sort(key=lambda x: x['dist'])
 
-        # --- Confidence Gate & Thresholding ---
-        # Heurística: Queries curtas/genéricas precisam de threshold mais estrito para evitar ruído.
-        is_short_query = len(query.strip()) < 20 or len(query.split()) <= 3
-        # Lower distance = better match. 0.40 is strict, 0.35 is very strict.
-        SIMILARITY_THRESHOLD = 0.35 if is_short_query else 0.40
+        # NOTE: Threshold logic here is kept for general quality, but EvidenceGate will apply stricter logic later.
+        # We can relax here slightly to let EvidenceGate decide.
+        SIMILARITY_THRESHOLD = 0.60 # Relaxed for retrieval, stricter check downstream
 
-        # Confidence Gate: Se o MELHOR resultado for ruim, retornamos vazio imediatamente.
-        # Isso força o modo STRICT a recusar, pois não haverá contexto.
-        if candidates and candidates[0]['dist'] > SIMILARITY_THRESHOLD:
-            logger.info(f"[RAG Gate] Rejected best match dist {candidates[0]['dist']:.3f} > {SIMILARITY_THRESHOLD}")
-            return []
-
-        # Reranking Logic:
-        # 1. Pick top chunk from each unique source
-        # 2. Fill remaining slots with next best chunks (respecting per-doc limit)
         final_selection = []
         seen_sources = set()
         source_counts = {}
-        MAX_PER_DOC = 2  # Max chunks per document in final list
+        MAX_PER_DOC = 2
 
-        # Pass 1: Diversity (One from each)
+        # Pass 1: Diversity
         diversity_picks = []
         remaining_candidates = []
 
         for c in candidates:
-            # Check relevance
             if c['dist'] > SIMILARITY_THRESHOLD:
                 continue
 
@@ -604,29 +517,22 @@ class VectorService:
             else:
                 remaining_candidates.append(c)
 
-        # Apply diversity picks first (up to limit)
         final_selection.extend(diversity_picks[:limit])
 
-        # Pass 2: Relevance (Fill remaining slots)
+        # Pass 2: Relevance (Fill)
         if len(final_selection) < limit:
             needed = limit - len(final_selection)
-
             for c in remaining_candidates:
                 if len(final_selection) >= limit: break
-
                 src = c['source']
                 current_count = source_counts.get(src, 0)
-
                 if current_count < MAX_PER_DOC:
                     final_selection.append(c)
                     source_counts[src] = current_count + 1
 
-        # Re-sort final selection by relevance for the prompt
         final_selection.sort(key=lambda x: x['dist'])
 
-        # Logging for observability
-        selected_sources = [c['source'] for c in final_selection]
-        logger.info(f"[RAG Diversity] Selected {len(final_selection)} chunks from: {selected_sources}")
+        logger.info(f"[RAG Diversity] Selected {len(final_selection)} chunks from {len(candidates)} candidates.")
 
         return self._format_candidates(final_selection)
 
@@ -639,19 +545,19 @@ class VectorService:
                 'source': c['meta'].get('source', 'Documento'),
                 'source_id': c['meta'].get('source_id', ''),
                 'chunk_index': c['meta'].get('chunk_index', 0),
-                'total_chunks': c['meta'].get('total_chunks', 1)
+                'total_chunks': c['meta'].get('total_chunks', 1),
+                'score': c['dist'] # Added score (distance)
             })
         return contexts
 
     def _search_memories(
         self, query: str, user_id: int, bot_id: int, limit: int
     ) -> List[str]:
-        """Busca apenas memórias de conversação."""
+        """Busca apenas memórias."""
         embedding = self._get_embedding(query, "retrieval_query")
         if not embedding:
             return []
 
-        # Memórias são privadas do user+bot, sem complexidade de scopo
         where_clause = {
                 "$and": [
                     {"user_id": str(user_id)},
@@ -660,8 +566,6 @@ class VectorService:
                 ]
             }
         
-        self._log_debug("_search_memories where:", where_clause)
-
         results = self.collection.query(
             query_embeddings=[embedding],
             n_results=limit,
@@ -676,19 +580,25 @@ class VectorService:
         return contexts
 
     def _format_doc_results(self, results: dict) -> List[Dict]:
-        """Formata resultados de documentos com fonte clara."""
+        """Formata resultados de documentos com score."""
         contexts = []
 
         if not results or not results['documents'] or not results['documents'][0]:
             return contexts
 
-        for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
+        docs = results['documents'][0]
+        metas = results['metadatas'][0]
+        # Distances might be missing if not requested, but usually are
+        dists = results['distances'][0] if 'distances' in results and results['distances'] else [0.0] * len(docs)
+
+        for doc, meta, dist in zip(docs, metas, dists):
             contexts.append({
                 'content': doc,
                 'source': meta.get('source', 'Documento'),
                 'source_id': meta.get('source_id', ''),
                 'chunk_index': meta.get('chunk_index', 0),
-                'total_chunks': meta.get('total_chunks', 1)
+                'total_chunks': meta.get('total_chunks', 1),
+                'score': dist
             })
 
         return contexts
