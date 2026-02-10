@@ -32,6 +32,7 @@ from .context_builder import (
     build_system_instruction,
     get_recent_attachment_context
 )
+from .strict_style_service import strict_style_service
 from .memory_service import process_memory_background
 from .tts_service import generate_tts_audio
 from .transcription_service import transcribe_audio_gemini
@@ -545,8 +546,14 @@ def process_message_stream(user_id: int, chat_id: int, user_message_text: str):
         if strict_context and not doc_contexts:
             logger.info("[Stream] Strict Mode + No Context -> Immediate Refusal")
 
-            # Use deterministic strict refusal
-            refusal_text = _build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_docs))
+            # Use deterministic strict refusal with Style Rewriter
+            base_refusal = _build_strict_refusal(bot.name, user_message_text, has_any_sources=bool(available_docs))
+            refusal_text = strict_style_service.rewrite_strict_refusal(
+                base_refusal,
+                bot.prompt, # Persona
+                bot.name,
+                _detect_lang(user_message_text)
+            )
 
             # Create final message immediately (No stream)
             ai_message = ChatMessage.objects.create(
