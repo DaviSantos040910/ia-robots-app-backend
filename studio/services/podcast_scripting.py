@@ -8,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 class PodcastScriptingService:
     @staticmethod
-    def generate_script(title: str, context: str, duration_constraint: str = "Medium", bot_name: str = "Alex", bot_prompt: str = "") -> list:
+    def generate_script(title: str, context: str, duration_constraint: str = "Medium", bot_name: str = "Alex", bot_prompt: str = "", language: str = None) -> dict:
         """
         Generates a podcast script dialogue between the Bot (Host) and a Co-host.
-        Returns a list of dicts: [{"speaker": "Host (BotName)", "text": "..."}, ...]
+        Returns a dict: { "episode_title": ..., "chapters": [], "dialogue": [...] }
         """
         client = get_ai_client()
         model_name = GENAI_MODEL_TEXT
@@ -22,6 +22,7 @@ class PodcastScriptingService:
         script_schema = types.Schema(
             type=types.Type.OBJECT,
             properties={
+                "schema_version": types.Schema(type=types.Type.INTEGER, description="Must be 1"),
                 "episode_title": types.Schema(type=types.Type.STRING, description="Catchy title (4-80 chars)"),
                 "episode_summary": types.Schema(type=types.Type.STRING, description="Brief summary (2-4 lines, no markdown)"),
                 "chapters": types.Schema(
@@ -31,7 +32,8 @@ class PodcastScriptingService:
                         properties={
                             "title": types.Schema(type=types.Type.STRING),
                             "start_turn_index": types.Schema(type=types.Type.INTEGER)
-                        }
+                        },
+                        required=["title", "start_turn_index"]
                     )
                 ),
                 "dialogue": types.Schema(
@@ -39,15 +41,16 @@ class PodcastScriptingService:
                     items=types.Schema(
                         type=types.Type.OBJECT,
                         properties={
+                            "turn_index": types.Schema(type=types.Type.INTEGER),
                             "speaker": types.Schema(type=types.Type.STRING, enum=["HOST", "COHOST"]),
                             "display_name": types.Schema(type=types.Type.STRING),
                             "text": types.Schema(type=types.Type.STRING)
                         },
-                        required=["speaker", "text"]
+                        required=["turn_index", "speaker", "display_name", "text"]
                     )
                 )
             },
-            required=["episode_title", "episode_summary", "chapters", "dialogue"]
+            required=["schema_version", "episode_title", "episode_summary", "chapters", "dialogue"]
         )
 
         # 1. SYSTEM INSTRUCTION
@@ -68,11 +71,11 @@ STYLE / FLOW
 - HOST should explain clearly and teach.
 
 LANGUAGE
-- Write in the user's language: Portuguese (unless context strongly implies English).
+- Write in the user's language: {language if language else "infer from the SOURCE MATERIAL and TITLE"}.
 
 HOST IDENTITY
 - HOST display name MUST be exactly: "{host_display}".
-- HOST personality (follow for tone only):
+- HOST personality (tone only):
   {persona_instruction}
 
 CONTEXT
@@ -83,7 +86,8 @@ OUTPUT FORMAT (STRICT)
 - Do not include markdown.
 - Do not include citations like [1].
 - Do not include any extra keys outside the schema.
-- Chapters must be 3 to 7 items and must point to valid dialogue indexes.
+- Chapters must be 3 to 7 items.
+- Dialogue must include turn_index starting at 0 and increment by 1.
 
 FACT POLICY (HARD RULES — MUST FOLLOW)
 - USE ONLY THE SOURCE MATERIAL FOR FACTS.
@@ -95,7 +99,7 @@ FACT POLICY (HARD RULES — MUST FOLLOW)
 
         # 2. USER PROMPT
         user_prompt = f"""TITLE: {title}
-TARGET DURATION: {duration_constraint}
+TARGET DURATION: {duration_constraint} minutes (approximately)
 AUDIENCE: A learner studying this topic.
 
 SOURCE MATERIAL:
@@ -104,16 +108,19 @@ SOURCE MATERIAL:
 >>>
 
 TASK
-Create a podcast script JSON using the required schema:
-1) episode_title: a concise title derived from the material
-2) episode_summary: 2–4 lines describing what will be covered
-3) chapters: 3–7 short chapter titles with start_turn_index pointing into dialogue
-4) dialogue: 2-speaker conversation (HOST and COHOST), where HOST teaches from the material
+Return JSON using the required schema:
+- episode_title
+- episode_summary (2–4 lines)
+- chapters (3–7 items with start_turn_index)
+- dialogue: array of turns, each with:
+  - turn_index (0..N-1)
+  - speaker ("HOST" or "COHOST")
+  - display_name (HOST={host_display}, COHOST="Co-host")
+  - text
 
-Remember:
-- HOST display_name MUST be "{host_display}"
-- COHOST display_name MUST be "Co-host"
-- If the user’s question/topic is not supported by SOURCE MATERIAL, say that clearly instead of inventing.
+IMPORTANT
+- If the topic is not supported by SOURCE MATERIAL, say so clearly instead of inventing.
+- Keep turns short and natural.
 """
 
         try:

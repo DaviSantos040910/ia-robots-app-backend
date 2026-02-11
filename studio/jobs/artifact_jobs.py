@@ -73,12 +73,21 @@ def generate_artifact_job(artifact_id, options):
 def _generate_podcast(artifact, context, options):
     # 1. Generate Script with Dynamic Host Persona
     bot = artifact.chat.bot
+
+    # Determine language preference
+    language = options.get('language')
+    if not language and hasattr(artifact.chat, 'language'):
+        language = artifact.chat.language
+    if not language and hasattr(bot, 'language'):
+        language = bot.language
+
     script = PodcastScriptingService.generate_script(
         title=artifact.title,
         context=context,
         duration_constraint=options.get('target_duration', 'Medium'),
         bot_name=bot.name,
-        bot_prompt=bot.prompt
+        bot_prompt=bot.prompt,
+        language=language
     )
     artifact.content = script
 
@@ -86,10 +95,37 @@ def _generate_podcast(artifact, context, options):
     artifact.stage = KnowledgeArtifact.Stage.RENDERING_EXPORT
     artifact.save(update_fields=['stage'])
 
-    audio_path = AudioMixerService.mix_podcast(script, bot_voice_enum=bot.voice)
+    audio_path, transcript, total_duration_ms = AudioMixerService.mix_podcast(script, bot_voice_enum=bot.voice)
 
     artifact.media_url = f"/media/{audio_path}"
-    artifact.duration = options.get('target_duration', '10:00')
+
+    # Calculate readable duration (MM:SS)
+    seconds = total_duration_ms / 1000
+    minutes = int(seconds // 60)
+    rem_seconds = int(seconds % 60)
+    artifact.duration = f"{minutes}:{rem_seconds:02d}"
+
+    # 3. Assemble Final Content (Schema V1)
+    if isinstance(script, dict):
+        # New Flow
+        artifact.content = {
+            "schema_version": 1,
+            "episode_title": script.get("episode_title", artifact.title),
+            "episode_summary": script.get("episode_summary", ""),
+            "chapters": script.get("chapters", []),
+            "dialogue": script.get("dialogue", []),
+            "transcript": transcript
+        }
+    else:
+        # Legacy Flow Fallback
+        artifact.content = {
+            "schema_version": 1,
+            "episode_title": artifact.title,
+            "episode_summary": "Generated Podcast",
+            "chapters": [],
+            "dialogue": script if isinstance(script, list) else [],
+            "transcript": transcript
+        }
 
 def _generate_standard_artifact(artifact, full_context, options):
     client = get_ai_client()
