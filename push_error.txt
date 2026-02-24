@@ -1,0 +1,43 @@
+﻿git : remote: error: GH013: Repository rule violations found for 
+refs/heads/migrate-artifact-generation-to-rq-15928142365216240474.        
+No linha:1 caractere:1
++ git push origin migrate-artifact-generation-to-rq-1592814236521624047 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (remote: error: ...240474.        :St 
+   ring) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   ÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇö
+ÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇö        
+remote:     Resolve the following violations before pushing again        
+remote: 
+remote:     - Push cannot contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how to resolve a blocked push        
+remote:      https://docs.github.com/code-security/secret-scanning/working-with-se
+cret-scanning-and-push-protection/working-with-push-protection-from-the-command-li
+ne#resolving-a-blocked-push        
+remote:             
+remote:             
+remote:       ÔÇöÔÇö SendGrid API Key ÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇ
+öÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇöÔÇö        
+remote:        locations:        
+remote:          - commit: 888ba1775bbdccb0596a5f55dc4ed4abbf59f4f6        
+remote:            path: setup_secrets.ps1:22        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to 
+allow the secret.        
+remote:        https://github.com/DaviSantos040910/ia-robots-app-backend/security/
+secret-scanning/unblock-secret/3A8NoTBKvQOtLLoxpSYWVMeM9Aq        
+remote:             
+remote: 
+remote: 
+To https://github.com/DaviSantos040910/ia-robots-app-backend.git
+ ! [remote rejected] migrate-artifact-generation-to-rq-15928142365216240474 -> 
+migrate-artifact-generation-to-rq-15928142365216240474 (push declined due to 
+repository rule violations)
+error: failed to push some refs to 
+'https://github.com/DaviSantos040910/ia-robots-app-backend.git'
