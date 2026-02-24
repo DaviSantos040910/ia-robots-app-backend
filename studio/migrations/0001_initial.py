@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("chat", "0002_chatmessage_duration"),
+        ("chat", "0001_initial"),
     ]
 
     operations = [

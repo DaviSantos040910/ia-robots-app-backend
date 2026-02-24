@@ -6,6 +6,7 @@ from google.genai import types
 from django.conf import settings
 from .ai_client import get_ai_client
 from .evidence_gate import EvidenceDecision
+from core.genai_models import GENAI_MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ Make the decision."""
         )
 
         response = self.client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=GENAI_MODEL_TEXT,
             contents=[
                 types.Content(role="user", parts=[types.Part(text=system_instruction + "\n\n" + user_prompt)])
             ],

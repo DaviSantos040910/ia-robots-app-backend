@@ -5,9 +5,11 @@ from django.utils.encoding import force_bytes, force_str
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .serializers import RegisterSerializer, UserSerializer
 from .tokens import email_verification_token
 from .utils import send_verification_email, send_email
+from .services.claim_service import claim_guest_session
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import render
 from django.urls import reverse
@@ -15,6 +17,11 @@ from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 password_reset_token = PasswordResetTokenGenerator()
@@ -62,6 +69,7 @@ class VerifyEmailView(APIView):
 class ResendVerificationView(APIView):
     permission_classes = [permissions.AllowAny]
 
+    @method_decorator(ratelimit(key="ip", rate="3/m", method='POST', block=True), name='dispatch')
     def post(self, request):
         email = request.data.get("email")
         if not email:
@@ -79,6 +87,7 @@ class ResendVerificationView(APIView):
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
+    @method_decorator(ratelimit(key="ip", rate="10/m", method='POST', block=True), name='dispatch')
     def post(self, request):
         identifier = request.data.get("identifier")
         password = request.data.get("password")
@@ -101,20 +110,21 @@ class LoginView(APIView):
         return Response({
             "token": access,
             "refresh": str(refresh),
-            "user": UserSerializer(user).data
+            "user": UserSerializer(user, context={'request': request}).data
         })
 
 
 class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     def patch(self, request):
         user = request.user
-        serializer = UserSerializer(user, data=request.data, partial=True)
+        serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -140,9 +150,55 @@ class ChangePasswordView(APIView):
         if not user.check_password(old_password):
             return Response({"detail": "Senha atual incorreta."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # M3: Validate new password strength
+        try:
+            validate_password(new_password, user)
+        except DjangoValidationError as e:
+            return Response({"detail": e.messages}, status=status.HTTP_400_BAD_REQUEST)
+
         user.set_password(new_password)
         user.save()
         return Response({"message": "Senha alterada com sucesso."})
+
+
+class ClaimGuestView(APIView):
+    """
+    Endpoint to claim a guest session and migrate data to the authenticated user.
+    Harden against header variations and idempotency.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # 1. Flexible Header Lookup
+        guest_id = (
+            request.headers.get("X-Guest-Id") or
+            request.headers.get("X-Guest-ID") or
+            request.headers.get("x-guest-id") or
+            request.META.get("HTTP_X_GUEST_ID")
+        )
+
+        # 2. Idempotency: If no ID provided, assume nothing to claim (Success No Content)
+        if not guest_id:
+            return Response({"detail": "No guest ID provided."}, status=status.HTTP_204_NO_CONTENT)
+
+        try:
+            # 3. Call Service
+            result = claim_guest_session(request.user, guest_id)
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Idempotency: If already claimed or not found, treat as success from client perspective
+            # so they can clear their local storage.
+            err_msg = str(e).lower()
+
+            if "already claimed" in err_msg:
+                return Response({"detail": "Session already claimed"}, status=status.HTTP_409_CONFLICT) # 409 tells client it's done
+
+            if "not found" in err_msg or "does not exist" in err_msg:
+                return Response({"detail": "Guest session not found"}, status=status.HTTP_204_NO_CONTENT)
+
+            # Default fallback — H4: Do not expose internal error details
+            logger.error(f"[ClaimGuest] Unexpected error: {e}", exc_info=True)
+            return Response({"detail": "Erro ao processar sessão."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # -----------------------
@@ -157,14 +213,18 @@ class ForgotPasswordView(APIView):
         return render(request, "accounts/forgot_password.html")
 
     @method_decorator(csrf_exempt)
+    @method_decorator(ratelimit(key="ip", rate="5/m", method='POST', block=True), name='dispatch')
     def post(self, request):
         email = request.data.get("email")
         if not email:
             return Response({"detail": "O campo email é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # M7: Always return success to prevent user enumeration
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"detail": "Usuário não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+            # Return same message to prevent email enumeration
+            return Response({"message": "Se o e-mail estiver cadastrado, enviaremos instruções de redefinição."})
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = password_reset_token.make_token(user)
@@ -184,7 +244,7 @@ class ForgotPasswordView(APIView):
         </html>
         """
         send_email(subject, html_content, user.email)
-        return Response({"message": "E-mail de redefinição enviado."})
+        return Response({"message": "Se o e-mail estiver cadastrado, enviaremos instruções de redefinição."})
 
 
 class ResetPasswordView(APIView):
@@ -229,6 +289,12 @@ class ResetPasswordView(APIView):
 
         if not password_reset_token.check_token(user, token):
             return Response({"detail": "Token inválido ou expirado."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # M4: Validate new password strength
+        try:
+            validate_password(password, user)
+        except DjangoValidationError as e:
+            return Response({"detail": e.messages}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(password)
         user.save()

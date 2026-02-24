@@ -9,7 +9,8 @@ class KnowledgeSource(models.Model):
         YOUTUBE = 'YOUTUBE', 'YouTube'
         IMAGE = 'IMAGE', 'Image'
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='knowledge_sources')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='knowledge_sources', null=True, blank=True)
+    guest_session = models.ForeignKey('accounts.GuestSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='knowledge_sources')
     title = models.CharField(max_length=255)
     source_type = models.CharField(max_length=20, choices=SourceType.choices, default=SourceType.FILE)
 
@@ -34,7 +35,8 @@ class StudySpace(models.Model):
     """
     Groups Knowledge Sources into a study space.
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='study_spaces')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='study_spaces', null=True, blank=True)
+    guest_session = models.ForeignKey('accounts.GuestSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='study_spaces')
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     cover_image = models.ImageField(upload_to='study_spaces/', null=True, blank=True)
@@ -83,6 +85,9 @@ class KnowledgeArtifact(models.Model):
     # Polymorphic content (JSON structure differs by type)
     content = models.JSONField(null=True, blank=True)
 
+    # Configuration options used for generation (e.g. difficulty, source_ids)
+    options_json = models.JSONField(null=True, blank=True)
+
     # Specific fields for Podcast or other media
     media_url = models.URLField(null=True, blank=True)
     duration = models.CharField(max_length=20, null=True, blank=True) # "5:30", "10:00"
@@ -99,6 +104,8 @@ class KnowledgeArtifact(models.Model):
     )
     correlation_id = models.UUIDField(null=True, blank=True)
     attempts = models.IntegerField(default=0)
+    job_id = models.CharField(max_length=255, null=True, blank=True)
+    enqueued_at = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)

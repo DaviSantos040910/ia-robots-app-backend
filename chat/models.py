@@ -20,7 +20,8 @@ class Chat(models.Model):
         ACTIVE = 'active', 'Active'
         ARCHIVED = 'archived', 'Archived'
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chats')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chats', null=True, blank=True)
+    guest_session = models.ForeignKey('accounts.GuestSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='chats')
     bot = models.ForeignKey(Bot, on_delete=models.CASCADE, related_name='chats')
 
     # --- NEW: Status field to manage active vs. archived conversations ---
@@ -36,13 +37,17 @@ class Chat(models.Model):
     # Context Sources directly linked to this chat
     sources = models.ManyToManyField('studio.KnowledgeSource', blank=True, related_name='chats')
 
+    # --- NEW: Summary field for memory compression ---
+    summary = models.TextField(null=True, blank=True, help_text="Compressed summary of earlier messages.")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-last_message_at'] # Order chats by the most recent message
 
     def __str__(self):
-        return f"Chat {self.id} between {self.user.username} and {self.bot.name} ({self.status})"
+        owner = self.user.username if self.user else "Guest"
+        return f"Chat {self.id} between {owner} and {self.bot.name} ({self.status})"
 
 class ChatMessage(models.Model):
     """
@@ -98,6 +103,9 @@ class ChatMessage(models.Model):
     # List of structured sources cited in the message (for UI chip)
     sources = models.JSONField(default=list, blank=True)
 
+    # Optional disclaimer/warning shown under message content (e.g. Mixed Mode)
+    warning = models.TextField(null=True, blank=True, help_text="Optional disclaimer/warning shown under message content")
+
     # -----------------------
     def __str__(self):
         if self.attachment and self.original_filename:
@@ -150,3 +158,4 @@ class TTSCache(models.Model):
 
     def __str__(self):
         return f"TTS Cache ({self.voice}): {self.text[:30]}..."
+from .models_vector import VectorChunk

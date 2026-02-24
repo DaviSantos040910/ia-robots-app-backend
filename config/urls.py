@@ -3,7 +3,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
+
+
+def health_check(request):
+    """Cloud Run health check endpoint."""
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    path('healthz/', health_check, name='health-check'),
     # Main admin site
     path('admin/', admin.site.urls),
 
@@ -24,6 +33,9 @@ urlpatterns = [
 
     # Include all URLs from the 'studio' app under '/api/v1/studio/'
     path('api/v1/studio/', include('studio.urls')),
+
+    # Include all URLs from the 'billing' app under '/api/v1/billing/'
+    path('api/v1/billing/', include('billing.api.urls')),
 ]
 # --- Add this line at the end ---
 # This tells Django to serve files from MEDIA_ROOT when in DEBUG mode.

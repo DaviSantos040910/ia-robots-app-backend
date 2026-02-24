@@ -8,6 +8,7 @@ from typing import List, Tuple, Optional
 from datetime import datetime
 from ..models import ChatMessage
 import logging
+from .persona_guard import PersonaGuard
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,9 @@ def build_system_instruction(
     current_time: str,
     available_docs: Optional[List[str]] = None,
     allow_web_search: bool = False,
-    strict_context: bool = False
+    strict_context: bool = False,
+    bot_name: str = "Tutor",
+    chat_summary: str = None
 ) -> str:
     """
     Constrói system instruction otimizado para RAG multi-documento e Output Format controlado.
@@ -89,7 +92,12 @@ def build_system_instruction(
         available_docs: Lista de nomes de documentos disponíveis (ordenados por recência)
         allow_web_search: Se True, injeta instruções específicas para uso da Google Search
         strict_context: Se True, a IA deve responder APENAS com base nas fontes.
+        bot_name: Nome do bot para compilação da persona.
+        chat_summary: Resumo compactado de mensagens antigas (Memory Compression).
     """
+
+    # 1. Compile Persona Rules
+    persona_block = PersonaGuard.compile_persona(bot_name, bot_prompt)
 
     # Lista de documentos disponíveis
     docs_list_section = ""
@@ -116,6 +124,15 @@ Arquivos enviados (do mais recente ao mais antigo):
 ## MEMÓRIA PESSOAL
 Contexto sobre {user_name} e conversas anteriores:
 {chr(10).join(memory_contexts)}
+"""
+
+    # Seção de resumo de conversa (Memory Compression)
+    summary_section = ""
+    if chat_summary:
+        summary_section = f"""
+## RESUMO DE CONVERSAS ANTERIORES
+O usuário e você já conversaram sobre os seguintes pontos (resumo compactado):
+{chat_summary}
 """
 
     # Definição do System Instruction Base
@@ -152,8 +169,8 @@ When STRICT CONTEXT MODE is enabled:
 - You may ONLY answer using the provided context.
 - You must NOT use prior knowledge, web knowledge, or assumptions.
 - If the provided context does NOT contain enough information to answer the question:
-  - You must politely refuse.
-  - You must state that the information was not found in the provided sources.
+  - You must politely refuse IN PORTUGUESE (PT-BR).
+  - You must state that the information was not found in the provided sources (e.g., "A informação não foi encontrada nos documentos fornecidos.").
   - You must NOT provide a general explanation.
   - You must NOT speculate or partially answer.
 
@@ -217,13 +234,13 @@ CURRENT SYSTEM CONFIGURATION
 Conversing with: {user_name}
 Date/Time: {current_time}
 
-[PERSONALITY (TUTOR PERSONA)]
-{bot_prompt}
+{persona_block}
 
 [SYSTEM MODES]
 STRICT CONTEXT MODE: {strict_status}
 WEB ACCESS: {web_status}
 
+{summary_section}
 {docs_list_section}
 {knowledge_section}
 {memory_section}

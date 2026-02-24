@@ -10,15 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
+import logging
 from datetime import timedelta
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 # Load .env if exists
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-print("SENDGRID_SENDER =", os.getenv("SENDGRID_SENDER"))
+# H1: Removed print() that leaked config data to Cloud Logging
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 SENDGRID_SENDER = os.getenv("SENDGRID_SENDER")
@@ -39,9 +41,18 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 # SECURITY
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret")
-DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
-ALLOWED_HOSTS = ["*"]  # Change in production
+# C1: Crash on missing SECRET_KEY in production (no insecure fallback)
+_secret_key = os.getenv("DJANGO_SECRET_KEY")
+DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"  # M2: Defaults to False
+if not _secret_key and not DEBUG:
+    raise ValueError(
+        "DJANGO_SECRET_KEY environment variable is required in production. "
+        "Set DJANGO_DEBUG=True for development without it."
+    )
+SECRET_KEY = _secret_key or "dev-secret-only-for-local"
+
+# C2: ALLOWED_HOSTS from env var (comma-separated)
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
 INSTALLED_APPS = [
@@ -60,6 +71,7 @@ INSTALLED_APPS = [
     "chat",  # Custom app
     "explore", # Add this line
     "studio", # Add this line
+    "billing", # New app for Plans/Quotas
     "django_rq",
 ]
 
@@ -95,10 +107,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Database
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # Password validation
@@ -135,11 +148,13 @@ AUTH_USER_MODEL = "accounts.User"
 # REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "accounts.authentication.LenientJWTAuthentication",
+        "accounts.authentication.GuestAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
     ),
+    "EXCEPTION_HANDLER": "billing.api.exceptions.custom_exception_handler",
 }
 
 # Simple JWT settings
@@ -149,16 +164,41 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# CORS settings for mobile / React Native apps
-CORS_ALLOWED_ORIGINS = [
-    "exp://127.0.0.1:19000",  # Expo local example
-]
-CORS_ALLOW_ALL_ORIGINS = True  # You can tighten this in production
+# C3: CORS settings — restricted in production
+_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if _cors_origins:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "exp://127.0.0.1:19000",  # Expo local
+    ]
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all in development
 
 # Email backend for development (console)
 
 # Optional basic rate-limiting config (requires django-ratelimit if used)
 RATELIMIT_ENABLE = True
+
+# M1: Upload file size limits
+FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024  # 25 MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024   # 25 MB
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024               # 25 MB (used in views)
+ALLOWED_UPLOAD_TYPES = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/m4a',
+    'audio/wav',
+    'audio/x-m4a',
+    'audio/webm',
+    'video/mp4',
+]
 
 # config/settings.py
 # ... (rest of your settings)
@@ -184,7 +224,13 @@ MAX_RAG_CONTEXT_TOKENS = 50000
 
 # False = Gemini API (gratuito com GEMINI_API_KEY)
 # True = Vertex AI (Google Cloud, requer projeto e credenciais)
-USE_VERTEX_AI = False
+def env_bool(name: str, default: bool = False) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "y", "on")
+
+USE_VERTEX_AI = env_bool("USE_VERTEX_AI", False)
 
 # Configurações Vertex AI (preencha quando for migrar)
 VERTEX_PROJECT_ID = os.getenv('VERTEX_PROJECT_ID', '')
@@ -199,3 +245,108 @@ RQ_QUEUES = {
         'DEFAULT_TIMEOUT': 360,
     },
 }
+
+# --- Guest Mode Configuration ---
+# Duração do trial do guest em minutos. Default: 3 dias (4320 minutos).
+GUEST_TRIAL_MINUTES = int(os.getenv("GUEST_TRIAL_MINUTES", "4320"))
+
+# --- Async Task Queue Configuration (Dual Backend) ---
+# 'thread' = Local Development (no Redis/Cloud required)
+# 'cloud_tasks' = Production (Google Cloud Tasks)
+QUEUE_BACKEND = os.getenv('QUEUE_BACKEND', 'thread')
+
+# Google Cloud Tasks Configuration (Required if QUEUE_BACKEND='cloud_tasks')
+GCP_PROJECT = os.getenv('GCP_PROJECT', '')
+GCP_LOCATION = os.getenv('GCP_LOCATION', 'us-central1')
+GCP_QUEUE = os.getenv('GCP_QUEUE', 'artifact-generation')
+
+# --- Storage Configuration ---
+# 'local' = Local Filesystem (default)
+# 'gcs' = Google Cloud Storage
+STORAGE_BACKEND = os.getenv('STORAGE_BACKEND', 'local')
+GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', '')
+
+# --- Vector DB Configuration ---
+# 'chroma' = Local ChromaDB (default)
+# 'pgvector' = PostgreSQL with pgvector extension
+VECTOR_DB_BACKEND = os.getenv('VECTOR_DB_BACKEND', 'chroma')
+
+if STORAGE_BACKEND == 'gcs':
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
+            "OPTIONS": {
+                "bucket_name": GCS_BUCKET_NAME,
+                "default_acl": None,  # L5: Python None, not string "None"
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+    MEDIA_URL = f'https://storage.googleapis.com/{GCS_BUCKET_NAME}/'
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
+# ================================
+# Google Play Billing Configuration
+# ================================
+
+GOOGLE_PLAY_PACKAGE_NAME = os.getenv(
+    "GOOGLE_PLAY_PACKAGE_NAME",
+    "com.stelarysllm.ia"  # default seguro para desenvolvimento
+)
+
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON = os.getenv(
+    "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
+    ""
+)
+
+# ================================
+# C4: Production Security Headers (Cloud Run terminates TLS at proxy)
+# ================================
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# ================================
+# Sentry Integration
+# ================================
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN and not DEBUG:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[
+                DjangoIntegration(
+                    transaction_style="url",
+                    middleware_spans=True,
+                ),
+                LoggingIntegration(
+                    level=logging.INFO,
+                    event_level=logging.ERROR,
+                ),
+            ],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,
+            environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        )
+    except ImportError:
+        pass  # sentry-sdk not installed, skip

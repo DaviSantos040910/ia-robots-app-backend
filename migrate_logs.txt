@@ -1,0 +1,1677 @@
+﻿[
+  {
+    "insertId": "8lsuoad5ali",
+    "labels": {
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth"
+    },
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Fsystem_event",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "methodName": "/Jobs.RunJob",
+      "resourceName": "namespaces/stellarys-lm/executions/backend-migrate-4gqth",
+      "response": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.Execution",
+        "apiVersion": "run.googleapis.com/v1",
+        "kind": "Execution",
+        "metadata": {
+          "annotations": {
+            "run.googleapis.com/client-name": "gcloud",
+            "run.googleapis.com/client-version": "556.0.0",
+            "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+            "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+            "run.googleapis.com/execution-environment": "gen2",
+            "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+            "run.googleapis.com/operation-id": "42d27abb-bb2a-49ef-918e-e8f56f99d3f0"
+          },
+          "creationTimestamp": "2026-02-24T02:11:54.206054Z",
+          "generation": 1,
+          "labels": {
+            "client.knative.dev/nonce": "qan_kug_wej",
+            "cloud.googleapis.com/location": "us-central1",
+            "run.googleapis.com/job": "backend-migrate",
+            "run.googleapis.com/jobGeneration": "9",
+            "run.googleapis.com/jobResourceVersion": "1771899102945583",
+            "run.googleapis.com/jobUid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "name": "backend-migrate-4gqth",
+          "namespace": "140218503200",
+          "ownerReferences": [
+            {
+              "apiVersion": "serving.knative.dev/v1",
+              "blockOwnerDeletion": true,
+              "controller": true,
+              "kind": "Job",
+              "name": "backend-migrate",
+              "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+            }
+          ],
+          "resourceVersion": "AAZLiITiVwc",
+          "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/executions/backend-migrate-4gqth",
+          "uid": "dcc42f5b-4fae-4668-99b6-40d14bd1ca87"
+        },
+        "spec": {
+          "parallelism": 1,
+          "taskCount": 1,
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "args": [
+                    "manage.py",
+                    "migrate"
+                  ],
+                  "command": [
+                    "python manage.py check"
+                  ],
+                  "env": [
+                    {
+                      "name": "USE_VERTEX_AI",
+                      "value": "True"
+                    },
+                    {
+                      "name": "VERTEX_PROJECT_ID",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "VERTEX_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "DJANGO_DEBUG",
+                      "value": "False"
+                    },
+                    {
+                      "name": "DJANGO_SETTINGS_MODULE",
+                      "value": "config.settings"
+                    },
+                    {
+                      "name": "STORAGE_BACKEND",
+                      "value": "gcs"
+                    },
+                    {
+                      "name": "GCS_BUCKET_NAME",
+                      "value": "stellarys-lm-prod-davisantos"
+                    },
+                    {
+                      "name": "QUEUE_BACKEND",
+                      "value": "cloud_tasks"
+                    },
+                    {
+                      "name": "GCP_PROJECT",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "GCP_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "GCP_QUEUE",
+                      "value": "artifact-generation"
+                    },
+                    {
+                      "name": "VECTOR_DB_BACKEND",
+                      "value": "pgvector"
+                    },
+                    {
+                      "name": "GEMINI_API_KEY"
+                    },
+                    {
+                      "name": "DJANGO_SECRET_KEY",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DJANGO_SECRET_KEY"
+                        }
+                      }
+                    },
+                    {
+                      "name": "DATABASE_URL",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DATABASE_URL"
+                        }
+                      }
+                    },
+                    {
+                      "name": "CLOUD_TASKS_SECRET",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "CLOUD_TASKS_SECRET"
+                        }
+                      }
+                    }
+                  ],
+                  "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                  "resources": {
+                    "limits": {
+                      "cpu": "1000m",
+                      "memory": "512Mi"
+                    }
+                  }
+                }
+              ],
+              "maxRetries": 3,
+              "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+              "timeoutSeconds": "600"
+            }
+          }
+        },
+        "status": {
+          "completionTime": "2026-02-24T02:19:33.893780Z",
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-02-24T02:19:33.893780Z",
+              "message": "Task backend-migrate-4gqth-task0 failed with exit code: 1 and message: The container exited with an error.",
+              "reason": "NonZeroExitCode",
+              "status": "False",
+              "type": "Completed"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:11:55.076109Z",
+              "message": "Provisioned imported containers.",
+              "status": "True",
+              "type": "ResourcesAvailable"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:14:36.819439Z",
+              "message": "Started deployed execution in 2m41.74s.",
+              "status": "True",
+              "type": "Started"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:11:54.919739Z",
+              "message": "Imported container image.",
+              "status": "True",
+              "type": "ContainerReady"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:19:37.325319Z",
+              "message": "System will retry after 00:00 from lastTransitionTime for attempt 0.",
+              "reason": "ImmediateRetry",
+              "severity": "Info",
+              "status": "True",
+              "type": "Retry"
+            }
+          ],
+          "failedCount": 1,
+          "logUri": "https://console.cloud.google.com/logs/viewer?project=stellarys-lm&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22backend-migrate%22%0Aresource.labels.location%3D%22us-central1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22backend-migrate-4gqth%22",
+          "observedGeneration": 1,
+          "retriedCount": 1,
+          "startTime": "2026-02-24T02:12:02.291144Z"
+        }
+      },
+      "serviceName": "run.googleapis.com",
+      "status": {
+        "code": 10,
+        "message": "Execution backend-migrate-4gqth has failed to complete, 0/1 tasks were a success."
+      }
+    },
+    "receiveTimestamp": "2026-02-24T02:19:37.919319500Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "timestamp": "2026-02-24T02:19:37.343738Z"
+  },
+  {
+    "insertId": "699d0ab1000cc3d430a12e4d",
+    "labels": {
+      "instanceId": "00da6cd2c4f1405314ff7b3f7d073cb65e702c3705f5e8cfa1d4efb12e738817db7a7c714f99f49c77f2032b0365f30a3c55a9ff84ff904b5f747ca7e75ae4475440b1780f49769bbc0f654b7d",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:19:29.842751691Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:19:29.833904617Z"
+  },
+  {
+    "insertId": "699d0ab1000cc3ee2793d5e6",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4f1405314ff7b3f7d073cb65e702c3705f5e8cfa1d4efb12e738817db7a7c714f99f49c77f2032b0365f30a3c55a9ff84ff904b5f747ca7e75ae4475440b1780f49769bbc0f654b7d",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:19:29.842751691Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:19:29.833904415Z"
+  },
+  {
+    "insertId": "699d0a6a0002fed6eab88229",
+    "labels": {
+      "instanceId": "00da6cd2c4506e174aaf184ec5a9a1ba1f6020f8be1b96d8d57f01001bb83b32ffc8a764a9e060e6527958be51bd929e46cb77536e04982e40c7f57e736c79470a236c6c14ed05b0cf6ffb2d51a511",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:18:18.203135515Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:18:18.196287237Z"
+  },
+  {
+    "insertId": "699d0a6a0002fee5e4a21104",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4506e174aaf184ec5a9a1ba1f6020f8be1b96d8d57f01001bb83b32ffc8a764a9e060e6527958be51bd929e46cb77536e04982e40c7f57e736c79470a236c6c14ed05b0cf6ffb2d51a511",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:18:18.203135515Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:18:18.196287017Z"
+  },
+  {
+    "insertId": "699d0a190004893cd5b8605f",
+    "labels": {
+      "instanceId": "00da6cd2c42e8c6af82a236a69637f81c1bca5b2239a0b6421bebd1bae51a8e67496795afe0ee238b2fa99fb6f338d021c8cd82214ab5d62229e859616fb0269ffc99729c883c32e19922af7d853",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:16:57.302134082Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:16:57.297249593Z"
+  },
+  {
+    "insertId": "699d0a190004894e91b2f164",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c42e8c6af82a236a69637f81c1bca5b2239a0b6421bebd1bae51a8e67496795afe0ee238b2fa99fb6f338d021c8cd82214ab5d62229e859616fb0269ffc99729c883c32e19922af7d853",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:16:57.302134082Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:16:57.297249293Z"
+  },
+  {
+    "insertId": "699d098d000465ae269df2f1",
+    "labels": {
+      "instanceId": "00da6cd2c4cf2774a974a28245474c4d5b0b26c01f15b88deda93dfac4b6b9b22bbd79b9ac6292f6c76ff8564a2f59443595340d56dc2eb8c7cc7eeb2a470250c01c1553915f78c0330862ae0c4a85",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:14:37.294681763Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:14:37.288096082Z"
+  },
+  {
+    "insertId": "699d098d000465c5612efeca",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4cf2774a974a28245474c4d5b0b26c01f15b88deda93dfac4b6b9b22bbd79b9ac6292f6c76ff8564a2f59443595340d56dc2eb8c7cc7eeb2a470250c01c1553915f78c0330862ae0c4a85",
+      "run.googleapis.com/execution_name": "backend-migrate-4gqth",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:14:37.294681763Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:14:37.288095909Z"
+  },
+  {
+    "insertId": "-63a1m7d6ufy",
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Fsystem_event",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "methodName": "/Jobs.ReplaceJob",
+      "resourceName": "namespaces/stellarys-lm/jobs/backend-migrate",
+      "response": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.Job",
+        "apiVersion": "run.googleapis.com/v1",
+        "kind": "Job",
+        "metadata": {
+          "annotations": {
+            "run.googleapis.com/client-name": "gcloud",
+            "run.googleapis.com/client-version": "556.0.0",
+            "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+            "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+            "run.googleapis.com/operation-id": "97acf367-323e-42e5-8ee5-3f1f0aa5c0dc"
+          },
+          "creationTimestamp": "2026-02-17T21:37:48.636691Z",
+          "generation": 9,
+          "labels": {
+            "cloud.googleapis.com/location": "us-central1",
+            "run.googleapis.com/lastUpdatedTime": "2026-02-24T02:11:42.656646Z"
+          },
+          "name": "backend-migrate",
+          "namespace": "140218503200",
+          "resourceVersion": "AAZLiGib4S8",
+          "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/jobs/backend-migrate",
+          "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+        },
+        "spec": {
+          "template": {
+            "metadata": {
+              "annotations": {
+                "run.googleapis.com/client-name": "gcloud",
+                "run.googleapis.com/client-version": "556.0.0",
+                "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+                "run.googleapis.com/execution-environment": "gen2"
+              },
+              "labels": {
+                "client.knative.dev/nonce": "qan_kug_wej"
+              }
+            },
+            "spec": {
+              "taskCount": 1,
+              "template": {
+                "spec": {
+                  "containers": [
+                    {
+                      "args": [
+                        "manage.py",
+                        "migrate"
+                      ],
+                      "command": [
+                        "python manage.py check"
+                      ],
+                      "env": [
+                        {
+                          "name": "USE_VERTEX_AI",
+                          "value": "True"
+                        },
+                        {
+                          "name": "VERTEX_PROJECT_ID",
+                          "value": "stellarys-lm"
+                        },
+                        {
+                          "name": "VERTEX_LOCATION",
+                          "value": "us-central1"
+                        },
+                        {
+                          "name": "DJANGO_DEBUG",
+                          "value": "False"
+                        },
+                        {
+                          "name": "DJANGO_SETTINGS_MODULE",
+                          "value": "config.settings"
+                        },
+                        {
+                          "name": "STORAGE_BACKEND",
+                          "value": "gcs"
+                        },
+                        {
+                          "name": "GCS_BUCKET_NAME",
+                          "value": "stellarys-lm-prod-davisantos"
+                        },
+                        {
+                          "name": "QUEUE_BACKEND",
+                          "value": "cloud_tasks"
+                        },
+                        {
+                          "name": "GCP_PROJECT",
+                          "value": "stellarys-lm"
+                        },
+                        {
+                          "name": "GCP_LOCATION",
+                          "value": "us-central1"
+                        },
+                        {
+                          "name": "GCP_QUEUE",
+                          "value": "artifact-generation"
+                        },
+                        {
+                          "name": "VECTOR_DB_BACKEND",
+                          "value": "pgvector"
+                        },
+                        {
+                          "name": "GEMINI_API_KEY"
+                        },
+                        {
+                          "name": "DJANGO_SECRET_KEY",
+                          "valueFrom": {
+                            "secretKeyRef": {
+                              "key": "latest",
+                              "name": "DJANGO_SECRET_KEY"
+                            }
+                          }
+                        },
+                        {
+                          "name": "DATABASE_URL",
+                          "valueFrom": {
+                            "secretKeyRef": {
+                              "key": "latest",
+                              "name": "DATABASE_URL"
+                            }
+                          }
+                        },
+                        {
+                          "name": "CLOUD_TASKS_SECRET",
+                          "valueFrom": {
+                            "secretKeyRef": {
+                              "key": "latest",
+                              "name": "CLOUD_TASKS_SECRET"
+                            }
+                          }
+                        }
+                      ],
+                      "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                      "resources": {
+                        "limits": {
+                          "cpu": "1000m",
+                          "memory": "512Mi"
+                        }
+                      }
+                    }
+                  ],
+                  "maxRetries": 3,
+                  "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+                  "timeoutSeconds": "600"
+                }
+              }
+            }
+          }
+        },
+        "status": {
+          "conditions": [
+            {
+              "status": "True",
+              "type": "Ready"
+            }
+          ],
+          "executionCount": 8,
+          "latestCreatedExecution": {
+            "completionStatus": "EXECUTION_FAILED",
+            "completionTimestamp": "2026-02-24T02:09:51.879082Z",
+            "creationTimestamp": "2026-02-24T02:00:15.788677Z",
+            "name": "backend-migrate-5xttn"
+          },
+          "observedGeneration": 9
+        }
+      },
+      "serviceName": "run.googleapis.com",
+      "status": {
+        "message": "Ready condition status changed to True for Job backend-migrate."
+      }
+    },
+    "receiveTimestamp": "2026-02-24T02:11:43.876147113Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "INFO",
+    "timestamp": "2026-02-24T02:11:42.953758Z"
+  },
+  {
+    "insertId": "5b4fxjd5cu7",
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Factivity",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "authenticationInfo": {
+        "oauthInfo": {
+          "oauthClientId": "32555940559.apps.googleusercontent.com"
+        },
+        "principalEmail": "davisantossousa2@gmail.com",
+        "principalSubject": "user:davisantossousa2@gmail.com"
+      },
+      "authorizationInfo": [
+        {
+          "granted": true,
+          "permission": "run.jobs.update",
+          "permissionType": "ADMIN_WRITE",
+          "resource": "namespaces/stellarys-lm/jobs/backend-migrate",
+          "resourceAttributes": {}
+        },
+        {
+          "granted": true,
+          "permission": "run.jobs.update",
+          "permissionType": "ADMIN_WRITE",
+          "resource": "namespaces/stellarys-lm/jobs/backend-migrate",
+          "resourceAttributes": {
+            "name": "namespaces/stellarys-lm/jobs/backend-migrate",
+            "service": "run.googleapis.com/",
+            "type": "run.googleapis.com/Job"
+          }
+        }
+      ],
+      "methodName": "google.cloud.run.v1.Jobs.ReplaceJob",
+      "request": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.ReplaceJobRequest",
+        "job": {
+          "apiVersion": "run.googleapis.com/v1",
+          "kind": "Job",
+          "metadata": {
+            "annotations": {
+              "run.googleapis.com/client-name": "gcloud",
+              "run.googleapis.com/client-version": "556.0.0",
+              "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+              "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+              "run.googleapis.com/operation-id": "c2192559-dc2c-431b-8b49-2ec40f129404"
+            },
+            "creationTimestamp": "2026-02-17T21:37:48.636691Z",
+            "generation": 8,
+            "labels": {
+              "cloud.googleapis.com/location": "us-central1",
+              "run.googleapis.com/lastUpdatedTime": "2026-02-24T01:16:06.816397Z"
+            },
+            "name": "backend-migrate",
+            "namespace": "140218503200",
+            "resourceVersion": "AAZLiGIXU/s",
+            "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/jobs/backend-migrate",
+            "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "spec": {
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "run.googleapis.com/client-name": "gcloud",
+                  "run.googleapis.com/client-version": "556.0.0",
+                  "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+                  "run.googleapis.com/execution-environment": "gen2"
+                },
+                "labels": {
+                  "client.knative.dev/nonce": "qan_kug_wej"
+                }
+              },
+              "spec": {
+                "taskCount": 1,
+                "template": {
+                  "spec": {
+                    "containers": [
+                      {
+                        "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                        "resources": {
+                          "limits": {
+                            "cpu": "1000m",
+                            "memory": "512Mi"
+                          }
+                        }
+                      }
+                    ],
+                    "maxRetries": 3,
+                    "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+                    "timeoutSeconds": "600"
+                  }
+                }
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Ready"
+              }
+            ],
+            "executionCount": 8,
+            "latestCreatedExecution": {
+              "completionStatus": "EXECUTION_FAILED",
+              "completionTimestamp": "2026-02-24T02:09:51.879082Z",
+              "creationTimestamp": "2026-02-24T02:00:15.788677Z",
+              "name": "backend-migrate-5xttn"
+            },
+            "observedGeneration": 8
+          }
+        },
+        "name": "namespaces/stellarys-lm/jobs/backend-migrate"
+      },
+      "requestMetadata": {
+        "callerIp": "45.173.226.81",
+        "callerSuppliedUserAgent": "google-cloud-sdk gcloud/556.0.0 command/gcloud.run.jobs.update invocation-id/4155eaad1ca54a0d84797834d3bdc48b environment/None environment-version/None client-os/WINDOWS client-os-ver/10.0.26100 client-pltf-arch/x86_64 interactive/True from-script/False python/3.13.8 term/  (Windows NT 10.0.26100),gzip(gfe)",
+        "destinationAttributes": {},
+        "requestAttributes": {
+          "auth": {},
+          "time": "2026-02-24T02:11:42.700948Z"
+        }
+      },
+      "resourceLocation": {
+        "currentLocations": [
+          "us-central1"
+        ]
+      },
+      "resourceName": "namespaces/stellarys-lm/jobs/backend-migrate",
+      "serviceName": "run.googleapis.com"
+    },
+    "receiveTimestamp": "2026-02-24T02:11:42.852253279Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "NOTICE",
+    "timestamp": "2026-02-24T02:11:42.562863Z"
+  },
+  {
+    "insertId": "5upy9id4pv8",
+    "labels": {
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn"
+    },
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Fsystem_event",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "methodName": "/Jobs.RunJob",
+      "resourceName": "namespaces/stellarys-lm/executions/backend-migrate-5xttn",
+      "response": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.Execution",
+        "apiVersion": "run.googleapis.com/v1",
+        "kind": "Execution",
+        "metadata": {
+          "annotations": {
+            "run.googleapis.com/client-name": "gcloud",
+            "run.googleapis.com/client-version": "556.0.0",
+            "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+            "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+            "run.googleapis.com/execution-environment": "gen2",
+            "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+            "run.googleapis.com/operation-id": "5f4ee7a8-0af1-42bd-a4a9-50a167253089"
+          },
+          "creationTimestamp": "2026-02-24T02:00:15.788677Z",
+          "generation": 1,
+          "labels": {
+            "client.knative.dev/nonce": "qan_kug_wej",
+            "cloud.googleapis.com/location": "us-central1",
+            "run.googleapis.com/job": "backend-migrate",
+            "run.googleapis.com/jobGeneration": "8",
+            "run.googleapis.com/jobResourceVersion": "1771896261810422",
+            "run.googleapis.com/jobUid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "name": "backend-migrate-5xttn",
+          "namespace": "140218503200",
+          "ownerReferences": [
+            {
+              "apiVersion": "serving.knative.dev/v1",
+              "blockOwnerDeletion": true,
+              "controller": true,
+              "kind": "Job",
+              "name": "backend-migrate",
+              "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+            }
+          ],
+          "resourceVersion": "AAZLiGIW1Ew",
+          "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/executions/backend-migrate-5xttn",
+          "uid": "33fc3783-bc7d-4dbc-b59f-528b5cdfc231"
+        },
+        "spec": {
+          "parallelism": 1,
+          "taskCount": 1,
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "args": [
+                    "manage.py",
+                    "migrate"
+                  ],
+                  "command": [
+                    "python manage.py migrate bots 0002_bot_suggestion1_bot_suggestion2_bot_suggestion3 --fake"
+                  ],
+                  "env": [
+                    {
+                      "name": "USE_VERTEX_AI",
+                      "value": "True"
+                    },
+                    {
+                      "name": "VERTEX_PROJECT_ID",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "VERTEX_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "DJANGO_DEBUG",
+                      "value": "False"
+                    },
+                    {
+                      "name": "DJANGO_SETTINGS_MODULE",
+                      "value": "config.settings"
+                    },
+                    {
+                      "name": "STORAGE_BACKEND",
+                      "value": "gcs"
+                    },
+                    {
+                      "name": "GCS_BUCKET_NAME",
+                      "value": "stellarys-lm-prod-davisantos"
+                    },
+                    {
+                      "name": "QUEUE_BACKEND",
+                      "value": "cloud_tasks"
+                    },
+                    {
+                      "name": "GCP_PROJECT",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "GCP_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "GCP_QUEUE",
+                      "value": "artifact-generation"
+                    },
+                    {
+                      "name": "VECTOR_DB_BACKEND",
+                      "value": "pgvector"
+                    },
+                    {
+                      "name": "GEMINI_API_KEY"
+                    },
+                    {
+                      "name": "DJANGO_SECRET_KEY",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DJANGO_SECRET_KEY"
+                        }
+                      }
+                    },
+                    {
+                      "name": "DATABASE_URL",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DATABASE_URL"
+                        }
+                      }
+                    },
+                    {
+                      "name": "CLOUD_TASKS_SECRET",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "CLOUD_TASKS_SECRET"
+                        }
+                      }
+                    }
+                  ],
+                  "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                  "resources": {
+                    "limits": {
+                      "cpu": "1000m",
+                      "memory": "512Mi"
+                    }
+                  }
+                }
+              ],
+              "maxRetries": 3,
+              "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+              "timeoutSeconds": "600"
+            }
+          }
+        },
+        "status": {
+          "completionTime": "2026-02-24T02:09:51.879082Z",
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-02-24T02:09:51.879082Z",
+              "message": "Task backend-migrate-5xttn-task0 failed with exit code: 1 and message: The container exited with an error.",
+              "reason": "NonZeroExitCode",
+              "status": "False",
+              "type": "Completed"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:00:16.632629Z",
+              "message": "Provisioned imported containers.",
+              "status": "True",
+              "type": "ResourcesAvailable"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:02:59.609584Z",
+              "message": "Started deployed execution in 2m42.97s.",
+              "status": "True",
+              "type": "Started"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:00:16.482606Z",
+              "message": "Imported container image.",
+              "status": "True",
+              "type": "ContainerReady"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T02:09:53.562700Z",
+              "message": "System will retry after 00:00 from lastTransitionTime for attempt 0.",
+              "reason": "ImmediateRetry",
+              "severity": "Info",
+              "status": "True",
+              "type": "Retry"
+            }
+          ],
+          "failedCount": 1,
+          "logUri": "https://console.cloud.google.com/logs/viewer?project=stellarys-lm&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22backend-migrate%22%0Aresource.labels.location%3D%22us-central1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22backend-migrate-5xttn%22",
+          "observedGeneration": 1,
+          "retriedCount": 1,
+          "startTime": "2026-02-24T02:00:32.269699Z"
+        }
+      },
+      "serviceName": "run.googleapis.com",
+      "status": {
+        "code": 10,
+        "message": "Execution backend-migrate-5xttn has failed to complete, 0/1 tasks were a success."
+      }
+    },
+    "receiveTimestamp": "2026-02-24T02:09:54.206568668Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "timestamp": "2026-02-24T02:09:53.576623Z"
+  },
+  {
+    "insertId": "699d086a000affe0d2359959",
+    "labels": {
+      "instanceId": "00da6cd2c46b74b2dda4728b294e37e2961669b253758b487e5e450d9e9a6b5a700b23287de84f7b1c68ac6c9b2df214079627500d504820727cb45f3f718e0d2b59491ffa73ddc62e247223a542",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:09:46.725783036Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:09:46.720840155Z"
+  },
+  {
+    "insertId": "699d086a000afff874706b9b",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c46b74b2dda4728b294e37e2961669b253758b487e5e450d9e9a6b5a700b23287de84f7b1c68ac6c9b2df214079627500d504820727cb45f3f718e0d2b59491ffa73ddc62e247223a542",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:09:46.725783036Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:09:46.720839945Z"
+  },
+  {
+    "insertId": "699d07d00006a968b49a6b9a",
+    "labels": {
+      "instanceId": "00da6cd2c45a5701578a8ebd7bc2d1d184825e6d0e336a974446f5c613ca44efb6110862bb022bab8e4b19c81927853cd04f406df6bb15b5c0af4de71aa2c7dfd98895ab843f820cf9d139a4c399ca",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:07:12.441675574Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:07:12.436556637Z"
+  },
+  {
+    "insertId": "699d07d00006a97b7cbb437b",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c45a5701578a8ebd7bc2d1d184825e6d0e336a974446f5c613ca44efb6110862bb022bab8e4b19c81927853cd04f406df6bb15b5c0af4de71aa2c7dfd98895ab843f820cf9d139a4c399ca",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:07:12.441675574Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:07:12.436556445Z"
+  },
+  {
+    "insertId": "699d074a000cf4446749d6d8",
+    "labels": {
+      "instanceId": "00da6cd2c48c8aa8143833862258d191e9e9124e6ce3e1a6e0da70b3e486f0bc3aaeed85f7987b065c56d13ba171c1f603b47d2da8f5039c082eeab1f71ede78b87435ea15e45c2fdd9bad52d33a26ea",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:04:58.854913428Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:04:58.848951647Z"
+  },
+  {
+    "insertId": "699d074a000cf450ea820590",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c48c8aa8143833862258d191e9e9124e6ce3e1a6e0da70b3e486f0bc3aaeed85f7987b065c56d13ba171c1f603b47d2da8f5039c082eeab1f71ede78b87435ea15e45c2fdd9bad52d33a26ea",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:04:58.854913428Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:04:58.848951357Z"
+  },
+  {
+    "insertId": "699d06d3000e3762c458769e",
+    "labels": {
+      "instanceId": "00da6cd2c4e1b1ba9edf72fb932826e1c9730d91e256a16aac31be6ea057fdf8d1aa65742b9aa968d83d249acec1997b9d9cfc8138b372a410404be9ceb0dc5b71545d4c3d831fab73435b790913b1",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:02:59.938031525Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T02:02:59.931637731Z"
+  },
+  {
+    "insertId": "699d06d3000e37762e14b434",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4e1b1ba9edf72fb932826e1c9730d91e256a16aac31be6ea057fdf8d1aa65742b9aa968d83d249acec1997b9d9cfc8138b372a410404be9ceb0dc5b71545d4c3d831fab73435b790913b1",
+      "run.googleapis.com/execution_name": "backend-migrate-5xttn",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T02:02:59.938031525Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T02:02:59.931637391Z"
+  },
+  {
+    "insertId": "1rtvmtpd5i9v",
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Factivity",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "authenticationInfo": {
+        "oauthInfo": {
+          "oauthClientId": "32555940559.apps.googleusercontent.com"
+        },
+        "principalEmail": "davisantossousa2@gmail.com",
+        "principalSubject": "user:davisantossousa2@gmail.com"
+      },
+      "authorizationInfo": [
+        {
+          "granted": true,
+          "permission": "run.jobs.update",
+          "permissionType": "ADMIN_WRITE",
+          "resource": "namespaces/stellarys-lm/jobs/backend-migrate",
+          "resourceAttributes": {}
+        },
+        {
+          "granted": true,
+          "permission": "run.jobs.update",
+          "permissionType": "ADMIN_WRITE",
+          "resource": "namespaces/stellarys-lm/jobs/backend-migrate",
+          "resourceAttributes": {
+            "name": "namespaces/stellarys-lm/jobs/backend-migrate",
+            "service": "run.googleapis.com/",
+            "type": "run.googleapis.com/Job"
+          }
+        }
+      ],
+      "methodName": "google.cloud.run.v1.Jobs.ReplaceJob",
+      "request": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.ReplaceJobRequest",
+        "job": {
+          "apiVersion": "run.googleapis.com/v1",
+          "kind": "Job",
+          "metadata": {
+            "annotations": {
+              "run.googleapis.com/client-name": "gcloud",
+              "run.googleapis.com/client-version": "556.0.0",
+              "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+              "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+              "run.googleapis.com/operation-id": "c2192559-dc2c-431b-8b49-2ec40f129404"
+            },
+            "creationTimestamp": "2026-02-17T21:37:48.636691Z",
+            "generation": 8,
+            "labels": {
+              "cloud.googleapis.com/location": "us-central1",
+              "run.googleapis.com/lastUpdatedTime": "2026-02-24T01:16:06.816397Z"
+            },
+            "name": "backend-migrate",
+            "namespace": "140218503200",
+            "resourceVersion": "AAZLh79DmPY",
+            "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/jobs/backend-migrate",
+            "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "spec": {
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "run.googleapis.com/client-name": "gcloud",
+                  "run.googleapis.com/client-version": "556.0.0",
+                  "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+                  "run.googleapis.com/execution-environment": "gen2"
+                },
+                "labels": {
+                  "client.knative.dev/nonce": "qan_kug_wej"
+                }
+              },
+              "spec": {
+                "taskCount": 1,
+                "template": {
+                  "spec": {
+                    "containers": [
+                      {
+                        "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                        "resources": {
+                          "limits": {
+                            "cpu": "1000m",
+                            "memory": "512Mi"
+                          }
+                        }
+                      }
+                    ],
+                    "maxRetries": 3,
+                    "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+                    "timeoutSeconds": "600"
+                  }
+                }
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Ready"
+              }
+            ],
+            "executionCount": 7,
+            "latestCreatedExecution": {
+              "completionStatus": "EXECUTION_FAILED",
+              "completionTimestamp": "2026-02-24T01:24:20.867824Z",
+              "creationTimestamp": "2026-02-24T01:16:17.720485Z",
+              "name": "backend-migrate-pcprr"
+            },
+            "observedGeneration": 8
+          }
+        },
+        "name": "namespaces/stellarys-lm/jobs/backend-migrate"
+      },
+      "requestMetadata": {
+        "callerIp": "45.173.226.81",
+        "callerSuppliedUserAgent": "google-cloud-sdk gcloud/556.0.0 command/gcloud.run.jobs.update invocation-id/fd3568cc0e834ab3a91d65045e25b4b9 environment/None environment-version/None client-os/WINDOWS client-os-ver/10.0.26100 client-pltf-arch/x86_64 interactive/True from-script/False python/3.13.8 term/  (Windows NT 10.0.26100),gzip(gfe)",
+        "destinationAttributes": {},
+        "requestAttributes": {
+          "auth": {},
+          "time": "2026-02-24T02:00:03.912826Z"
+        }
+      },
+      "resourceLocation": {
+        "currentLocations": [
+          "us-central1"
+        ]
+      },
+      "resourceName": "namespaces/stellarys-lm/jobs/backend-migrate",
+      "serviceName": "run.googleapis.com"
+    },
+    "receiveTimestamp": "2026-02-24T02:00:03.950272172Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "NOTICE",
+    "timestamp": "2026-02-24T02:00:03.766795Z"
+  },
+  {
+    "insertId": "-n0zjnfd6m3e",
+    "labels": {
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr"
+    },
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Fsystem_event",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "methodName": "/Jobs.RunJob",
+      "resourceName": "namespaces/stellarys-lm/executions/backend-migrate-pcprr",
+      "response": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.Execution",
+        "apiVersion": "run.googleapis.com/v1",
+        "kind": "Execution",
+        "metadata": {
+          "annotations": {
+            "run.googleapis.com/client-name": "gcloud",
+            "run.googleapis.com/client-version": "556.0.0",
+            "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+            "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+            "run.googleapis.com/execution-environment": "gen2",
+            "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+            "run.googleapis.com/operation-id": "392aa107-6871-4be2-ba90-3b14d9be4440"
+          },
+          "creationTimestamp": "2026-02-24T01:16:17.720485Z",
+          "generation": 1,
+          "labels": {
+            "client.knative.dev/nonce": "qan_kug_wej",
+            "cloud.googleapis.com/location": "us-central1",
+            "run.googleapis.com/job": "backend-migrate",
+            "run.googleapis.com/jobGeneration": "8",
+            "run.googleapis.com/jobResourceVersion": "1771895767092503",
+            "run.googleapis.com/jobUid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "name": "backend-migrate-pcprr",
+          "namespace": "140218503200",
+          "ownerReferences": [
+            {
+              "apiVersion": "serving.knative.dev/v1",
+              "blockOwnerDeletion": true,
+              "controller": true,
+              "kind": "Job",
+              "name": "backend-migrate",
+              "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+            }
+          ],
+          "resourceVersion": "AAZLh79DD+0",
+          "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/executions/backend-migrate-pcprr",
+          "uid": "708882cc-5a7b-4638-830e-16eca6a56cad"
+        },
+        "spec": {
+          "parallelism": 1,
+          "taskCount": 1,
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "args": [
+                    "manage.py",
+                    "migrate"
+                  ],
+                  "command": [
+                    "python manage.py migrate bots 0002_bot_suggestion1_bot_suggestion2_bot_suggestion3 --fake"
+                  ],
+                  "env": [
+                    {
+                      "name": "USE_VERTEX_AI",
+                      "value": "True"
+                    },
+                    {
+                      "name": "VERTEX_PROJECT_ID",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "VERTEX_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "DJANGO_DEBUG",
+                      "value": "False"
+                    },
+                    {
+                      "name": "DJANGO_SETTINGS_MODULE",
+                      "value": "config.settings"
+                    },
+                    {
+                      "name": "STORAGE_BACKEND",
+                      "value": "gcs"
+                    },
+                    {
+                      "name": "GCS_BUCKET_NAME",
+                      "value": "stellarys-lm-prod-davisantos"
+                    },
+                    {
+                      "name": "QUEUE_BACKEND",
+                      "value": "cloud_tasks"
+                    },
+                    {
+                      "name": "GCP_PROJECT",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "GCP_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "GCP_QUEUE",
+                      "value": "artifact-generation"
+                    },
+                    {
+                      "name": "VECTOR_DB_BACKEND",
+                      "value": "pgvector"
+                    },
+                    {
+                      "name": "GEMINI_API_KEY"
+                    },
+                    {
+                      "name": "DJANGO_SECRET_KEY",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DJANGO_SECRET_KEY"
+                        }
+                      }
+                    },
+                    {
+                      "name": "DATABASE_URL",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DATABASE_URL"
+                        }
+                      }
+                    },
+                    {
+                      "name": "CLOUD_TASKS_SECRET",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "CLOUD_TASKS_SECRET"
+                        }
+                      }
+                    }
+                  ],
+                  "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:fd817ec68c832fdba4c4ee47b69e7b7af32ddee8e7ec8e0a1b581db47932e8d6",
+                  "resources": {
+                    "limits": {
+                      "cpu": "1000m",
+                      "memory": "512Mi"
+                    }
+                  }
+                }
+              ],
+              "maxRetries": 3,
+              "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+              "timeoutSeconds": "600"
+            }
+          }
+        },
+        "status": {
+          "completionTime": "2026-02-24T01:24:20.867824Z",
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-02-24T01:24:20.867824Z",
+              "message": "Task backend-migrate-pcprr-task0 failed with exit code: 1 and message: The container exited with an error.",
+              "reason": "NonZeroExitCode",
+              "status": "False",
+              "type": "Completed"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T01:16:18.506726Z",
+              "message": "Provisioned imported containers.",
+              "status": "True",
+              "type": "ResourcesAvailable"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T01:18:23.556233Z",
+              "message": "Started deployed execution in 2m5.04s.",
+              "status": "True",
+              "type": "Started"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T01:16:18.370865Z",
+              "message": "Imported container image.",
+              "status": "True",
+              "type": "ContainerReady"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T01:24:21.775341Z",
+              "message": "System will retry after 00:00 from lastTransitionTime for attempt 0.",
+              "reason": "ImmediateRetry",
+              "severity": "Info",
+              "status": "True",
+              "type": "Retry"
+            }
+          ],
+          "failedCount": 1,
+          "logUri": "https://console.cloud.google.com/logs/viewer?project=stellarys-lm&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22backend-migrate%22%0Aresource.labels.location%3D%22us-central1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22backend-migrate-pcprr%22",
+          "observedGeneration": 1,
+          "retriedCount": 1,
+          "startTime": "2026-02-24T01:16:26.245678Z"
+        }
+      },
+      "serviceName": "run.googleapis.com",
+      "status": {
+        "code": 10,
+        "message": "Execution backend-migrate-pcprr has failed to complete, 0/1 tasks were a success."
+      }
+    },
+    "receiveTimestamp": "2026-02-24T01:24:22.207186024Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "timestamp": "2026-02-24T01:24:21.787230Z"
+  },
+  {
+    "insertId": "699cfdc20000eb32fb096cc1",
+    "labels": {
+      "instanceId": "00da6cd2c425a18592c4e29afee685a7c2005bc210d1e57f729e37eb396b002b38f0c979b21622cc36fb395421fb2fe5e8d953e365c4a7787d60831251b71f5358d74718518840599db78268a32ccb",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:24:18.064505449Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T01:24:18.060142188Z"
+  },
+  {
+    "insertId": "699cfdc20000eb43384c3995",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c425a18592c4e29afee685a7c2005bc210d1e57f729e37eb396b002b38f0c979b21622cc36fb395421fb2fe5e8d953e365c4a7787d60831251b71f5358d74718518840599db78268a32ccb",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:24:18.064505449Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T01:24:18.060141978Z"
+  },
+  {
+    "insertId": "699cfd26000259f957d91eba",
+    "labels": {
+      "instanceId": "00da6cd2c474d8092486762cc34f9fba2a75856fd3e880cc598d8a3574963943cd8f340addd1aad323676885e64b6603c4a4db62343ca5e2c9b0491bd2eb6f6dcba08b65934f425ec1a013313c0d8d",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:21:42.160327557Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T01:21:42.154081110Z"
+  },
+  {
+    "insertId": "699cfd2600025a0f9111b330",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c474d8092486762cc34f9fba2a75856fd3e880cc598d8a3574963943cd8f340addd1aad323676885e64b6603c4a4db62343ca5e2c9b0491bd2eb6f6dcba08b65934f425ec1a013313c0d8d",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:21:42.160327557Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T01:21:42.154080790Z"
+  },
+  {
+    "insertId": "699cfcce0002383b3cab443d",
+    "labels": {
+      "instanceId": "00da6cd2c4d36369dfb35c7a225566968358a891033974f7806fc7c822886c3079bba12273cf3c4fe801687d7098155deed8f18ce821310a983b38628e2adb6f5e81fd19471e4c9684615bd3e7387b63",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:20:14.149448919Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T01:20:14.145450909Z"
+  },
+  {
+    "insertId": "699cfcce0002384a6fe0e88d",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4d36369dfb35c7a225566968358a891033974f7806fc7c822886c3079bba12273cf3c4fe801687d7098155deed8f18ce821310a983b38628e2adb6f5e81fd19471e4c9684615bd3e7387b63",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:20:14.149448919Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T01:20:14.145450669Z"
+  },
+  {
+    "insertId": "699cfc5f000e956f8d8fedf5",
+    "labels": {
+      "instanceId": "00da6cd2c472b58084bcfb7cbafcd2029b270351430af9d43fedcc8c7eb18b710cc6436a34e476bc4b72d45d52633d221a1c134fdd23fd160e6dada78fbc44372731210f94363bc9c62d055bbfbd4871",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:18:23.962179535Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "terminated: Application failed to start: The container may have exited abnormally.",
+    "timestamp": "2026-02-24T01:18:23.955736096Z"
+  },
+  {
+    "insertId": "699cfc5f000e95800a096d02",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c472b58084bcfb7cbafcd2029b270351430af9d43fedcc8c7eb18b710cc6436a34e476bc4b72d45d52633d221a1c134fdd23fd160e6dada78fbc44372731210f94363bc9c62d055bbfbd4871",
+      "run.googleapis.com/execution_name": "backend-migrate-pcprr",
+      "run.googleapis.com/task_attempt": "0",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T01:18:23.962179535Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Application exec likely failed",
+    "timestamp": "2026-02-24T01:18:23.955735866Z"
+  }
+]

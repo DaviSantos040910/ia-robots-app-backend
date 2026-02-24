@@ -1,15 +1,14 @@
 # chat/services/memory_service.py
 
 import logging
-from google.genai import types
 
 from .ai_client import get_ai_client
-from ..vector_service import VectorService
+from ..vector_service import vector_service
+from billing.services.quotas import check_and_consume, QuotaExceededException
+from accounts.models import User, GuestSession
+from core.genai_models import GENAI_MODEL_TEXT
 
 logger = logging.getLogger(__name__)
-
-# Instância global do serviço vetorial, igual ao ai_service.py
-vector_service = VectorService()
 
 
 def _summarize_fact(text: str, role: str = 'user') -> str:
@@ -21,6 +20,7 @@ def _summarize_fact(text: str, role: str = 'user') -> str:
         return ""
 
     try:
+        from google.genai import types
         client = get_ai_client()
 
         prompt = f"""Analise o texto abaixo e extraia APENAS fatos concretos e duradouros que valem a pena lembrar.
@@ -37,7 +37,7 @@ REGRAS:
 Responda APENAS com o fato extraído ou "NO_FACT"."""
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=GENAI_MODEL_TEXT,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0)
         )
@@ -60,6 +60,25 @@ def process_memory_background(user_id, bot_id, user_text, ai_text):
     Função executada em thread separada para processar e salvar memórias.
     Lógica idêntica a _process_memory_background em ai_service.py.
     """
+    # --- BILLING CHECK ---
+    user_obj = None
+    guest_obj = None
+    try:
+        if isinstance(user_id, int):
+            user_obj = User.objects.get(id=user_id)
+        else:
+            guest_obj = GuestSession.objects.get(id=str(user_id))
+
+        check_and_consume(user=user_obj, guest_session=guest_obj, resource='memory_run', quantity=1)
+    except QuotaExceededException:
+        logger.info(f"[Memory] Quota exceeded for user {user_id}. Skipping memory processing.")
+        return
+    except Exception as e:
+        logger.warning(f"[Memory] Failed to resolve user for quota check: {e}")
+        # Continue or abort? If we can't identify user, billing might fail, but functionality logic might work if ID is valid.
+        # But usually we should abort if we can't bill.
+        return
+
     try:
         # 1. Processar mensagem do Usuário (prioridade)
         if user_text and len(user_text) > 25:

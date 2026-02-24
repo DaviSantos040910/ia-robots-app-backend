@@ -24,7 +24,8 @@ class Bot(models.Model):
         GUESTS = 'Guests', 'Guests'
         PUBLIC = 'Public', 'Public'
 
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_bots')
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_bots', null=True, blank=True)
+    guest_session = models.ForeignKey('accounts.GuestSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_bots')
     name = models.CharField(max_length=100)
     description = models.CharField(max_length=255, blank=True, help_text="A short description of what the bot does.")
     prompt = models.TextField()
@@ -46,7 +47,7 @@ class Bot(models.Model):
     allow_web_search = models.BooleanField(default=False)
     strict_context = models.BooleanField(default=False)
 
-    publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PUBLIC)
+    publicity = models.CharField(max_length=10, choices=Publicity.choices, default=Publicity.PRIVATE)
     is_official = models.BooleanField(default=False)
     categories = models.ManyToManyField(Category, related_name='bots', blank=True)
 

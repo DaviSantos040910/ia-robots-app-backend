@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('bots', '0002_bot_suggestion1_bot_suggestion2_bot_suggestion3'),
+        ('bots', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

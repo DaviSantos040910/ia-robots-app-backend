@@ -1,0 +1,481 @@
+﻿TIMESTAMP                    TEXT_PAYLOAD
+2026-02-24T21:23:57.174928Z  Container called exit(1).
+2026-02-24T21:23:56.297828Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 118, in handle
+                                 executor = MigrationExecutor(connection, self.migration_progress_callback)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 18, in __init__
+                                 self.loader = MigrationLoader(self.connection)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 58, in __init__
+                                 self.build_graph()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 229, in build_graph
+                                 self.load_disk()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 120, in load_disk
+                                 migration_module = import_module(migration_path)
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/importlib/__init__.py", line 90, in import_module
+                                 return _bootstrap._gcd_import(name[level:], package, level)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+                               File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+                               File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+                               File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+                               File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+                               File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 7, in <module>
+                                 class Migration(migrations.Migration):
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 14, in Migration
+                                 pgvector.django.vector.VectorExtension(),
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             AttributeError: module 'pgvector.django.vector' has no attribute 'VectorExtension'
+2026-02-24T21:23:55.905946Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T21:23:47.680618Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T21:23:45.709973Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T21:20:08.922426Z  Container called exit(1).
+2026-02-24T21:20:08.093396Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 118, in handle
+                                 executor = MigrationExecutor(connection, self.migration_progress_callback)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 18, in __init__
+                                 self.loader = MigrationLoader(self.connection)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 58, in __init__
+                                 self.build_graph()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 229, in build_graph
+                                 self.load_disk()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 120, in load_disk
+                                 migration_module = import_module(migration_path)
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/importlib/__init__.py", line 90, in import_module
+                                 return _bootstrap._gcd_import(name[level:], package, level)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+                               File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+                               File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+                               File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+                               File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+                               File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 7, in <module>
+                                 class Migration(migrations.Migration):
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 14, in Migration
+                                 pgvector.django.vector.VectorExtension(),
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             AttributeError: module 'pgvector.django.vector' has no attribute 'VectorExtension'
+2026-02-24T21:20:07.587560Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T21:19:57.053804Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T21:19:54.820442Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T21:18:19.818892Z  Container called exit(1).
+2026-02-24T21:18:18.968770Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 118, in handle
+                                 executor = MigrationExecutor(connection, self.migration_progress_callback)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 18, in __init__
+                                 self.loader = MigrationLoader(self.connection)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 58, in __init__
+                                 self.build_graph()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 229, in build_graph
+                                 self.load_disk()
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py", line 120, in load_disk
+                                 migration_module = import_module(migration_path)
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/importlib/__init__.py", line 90, in import_module
+                                 return _bootstrap._gcd_import(name[level:], package, level)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+                               File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+                               File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+                               File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+                               File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+                               File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 7, in <module>
+                                 class Migration(migrations.Migration):
+                               File "/app/chat/migrations/0010_vectorchunk.py", line 14, in Migration
+                                 pgvector.django.vector.VectorExtension(),
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             AttributeError: module 'pgvector.django.vector' has no attribute 'VectorExtension'
+2026-02-24T21:18:18.573835Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T21:18:09.618798Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T21:18:07.749539Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T21:15:53.814371Z
+2026-02-24T21:15:53.440162Z
+2026-02-24T21:03:32.072563Z
+2026-02-24T21:03:27.876601Z    Applying chat.0010_vectorchunk...
+2026-02-24T21:03:26.090582Z  Container called exit(1).
+2026-02-24T21:03:25.145267Z                                                               ^
+2026-02-24T21:03:25.145263Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T21:03:25.145251Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 357, in handle
+                                 post_migrate_state = executor.migrate(
+                                                      ^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 135, in migrate
+                                 state = self._migrate_all_forwards(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 167, in _migrate_all_forwards
+                                 state = self.apply_migration(
+                                         ^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 255, in apply_migration
+                                 state = migration.apply(state, schema_editor)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/migration.py", line 132, in apply
+                                 operation.database_forwards(
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/operations/models.py", line 97, in database_forwards
+                                 schema_editor.create_model(model)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 505, in create_model
+                                 self.execute(sql, params or None)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/postgresql/schema.py", line 45, in execute
+                                 return super().execute(sql, params)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 202, in execute
+                                 cursor.execute(sql, params)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+                                 return self._execute_with_wrappers(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+                                 return executor(sql, params, many, context)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+                                 with self.db.wrap_database_errors:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/utils.py", line 91, in __exit__
+                                 raise dj_exc_value.with_traceback(traceback) from exc_value
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             django.db.utils.ProgrammingError: type "vector" does not exist
+2026-02-24T21:03:25.117355Z  The above exception was the direct cause of the following exception:
+2026-02-24T21:03:25.117351Z                                                               ^
+2026-02-24T21:03:25.117348Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T21:03:25.117338Z  Traceback (most recent call last):
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             psycopg.errors.UndefinedObject: type "vector" does not exist
+2026-02-24T21:03:25.097751Z  Running migrations:
+2026-02-24T21:03:25.075084Z    Apply all migrations: accounts, admin, auth, billing, bots, chat, contenttypes, django_rq, explore, sessions, studio
+2026-02-24T21:03:25.075071Z  Operations to perform:
+2026-02-24T21:03:24.152828Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T21:03:13.147330Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T21:03:11.000779Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T21:00:49.496133Z    Applying chat.0010_vectorchunk...
+2026-02-24T21:00:47.483698Z  Container called exit(1).
+2026-02-24T21:00:46.293721Z                                                               ^
+2026-02-24T21:00:46.293715Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T21:00:46.293688Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 357, in handle
+                                 post_migrate_state = executor.migrate(
+                                                      ^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 135, in migrate
+                                 state = self._migrate_all_forwards(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 167, in _migrate_all_forwards
+                                 state = self.apply_migration(
+                                         ^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 255, in apply_migration
+                                 state = migration.apply(state, schema_editor)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/migration.py", line 132, in apply
+                                 operation.database_forwards(
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/operations/models.py", line 97, in database_forwards
+                                 schema_editor.create_model(model)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 505, in create_model
+                                 self.execute(sql, params or None)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/postgresql/schema.py", line 45, in execute
+                                 return super().execute(sql, params)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 202, in execute
+                                 cursor.execute(sql, params)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+                                 return self._execute_with_wrappers(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+                                 return executor(sql, params, many, context)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+                                 with self.db.wrap_database_errors:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/utils.py", line 91, in __exit__
+                                 raise dj_exc_value.with_traceback(traceback) from exc_value
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             django.db.utils.ProgrammingError: type "vector" does not exist
+2026-02-24T21:00:46.230464Z  The above exception was the direct cause of the following exception:
+2026-02-24T21:00:46.230459Z                                                               ^
+2026-02-24T21:00:46.230455Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T21:00:46.230440Z  Traceback (most recent call last):
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             psycopg.errors.UndefinedObject: type "vector" does not exist
+2026-02-24T21:00:46.213173Z  Running migrations:
+2026-02-24T21:00:46.194358Z    Apply all migrations: accounts, admin, auth, billing, bots, chat, contenttypes, django_rq, explore, sessions, studio
+2026-02-24T21:00:46.194339Z  Operations to perform:
+2026-02-24T21:00:45.374999Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T21:00:32.058479Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T21:00:25.035578Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T20:58:41.637076Z
+2026-02-24T20:58:39.446541Z    Applying chat.0010_vectorchunk...
+2026-02-24T20:58:37.587748Z  Container called exit(1).
+2026-02-24T20:58:36.539310Z                                                               ^
+2026-02-24T20:58:36.539304Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T20:58:36.539274Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 357, in handle
+                                 post_migrate_state = executor.migrate(
+                                                      ^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 135, in migrate
+                                 state = self._migrate_all_forwards(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 167, in _migrate_all_forwards
+                                 state = self.apply_migration(
+                                         ^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 255, in apply_migration
+                                 state = migration.apply(state, schema_editor)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/migration.py", line 132, in apply
+                                 operation.database_forwards(
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/operations/models.py", line 97, in database_forwards
+                                 schema_editor.create_model(model)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 505, in create_model
+                                 self.execute(sql, params or None)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/postgresql/schema.py", line 45, in execute
+                                 return super().execute(sql, params)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 202, in execute
+                                 cursor.execute(sql, params)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+                                 return self._execute_with_wrappers(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+                                 return executor(sql, params, many, context)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+                                 with self.db.wrap_database_errors:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/utils.py", line 91, in __exit__
+                                 raise dj_exc_value.with_traceback(traceback) from exc_value
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             django.db.utils.ProgrammingError: type "vector" does not exist
+2026-02-24T20:58:36.504357Z  The above exception was the direct cause of the following exception:
+2026-02-24T20:58:36.504349Z                                                               ^
+2026-02-24T20:58:36.504343Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T20:58:36.504324Z  Traceback (most recent call last):
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             psycopg.errors.UndefinedObject: type "vector" does not exist
+2026-02-24T20:58:36.478751Z  Running migrations:
+2026-02-24T20:58:36.435479Z    Apply all migrations: accounts, admin, auth, billing, bots, chat, contenttypes, django_rq, explore, sessions, studio
+2026-02-24T20:58:36.435457Z  Operations to perform:
+2026-02-24T20:58:35.537959Z  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.
+2026-02-24T20:58:32.002307Z
+2026-02-24T20:58:24.658713Z  Consider using the pymupdf_layout package for a greatly improved page layout analysis.
+2026-02-24T20:58:22.377059Z  GEMINI_API_KEY n?o encontrada.
+2026-02-24T20:58:20.635283Z
+2026-02-24T20:58:13.555023Z
+2026-02-24T20:57:56.295580Z
+2026-02-24T20:57:42.460418Z
+2026-02-24T20:57:31.843300Z
+2026-02-24T20:57:22.727430Z
+2026-02-24T20:57:10.211806Z
+2026-02-24T20:56:46.500461Z    Applying chat.0010_vectorchunk...
+2026-02-24T20:56:45.775171Z
+2026-02-24T20:56:44.762409Z  Container called exit(1).
+2026-02-24T20:56:43.834919Z                                                               ^
+2026-02-24T20:56:43.834915Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T20:56:43.834895Z  Traceback (most recent call last):
+                               File "/app/manage.py", line 22, in <module>
+                                 main()
+                               File "/app/manage.py", line 18, in main
+                                 execute_from_command_line(sys.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+                                 utility.execute()
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py", line 436, in execute
+                                 self.fetch_command(subcommand).run_from_argv(self.argv)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 413, in run_from_argv
+                                 self.execute(*args, **cmd_options)
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 459, in execute
+                                 output = self.handle(*args, **options)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/base.py", line 107, in wrapper
+                                 res = handle_func(*args, **kwargs)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py", line 357, in handle
+                                 post_migrate_state = executor.migrate(
+                                                      ^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 135, in migrate
+                                 state = self._migrate_all_forwards(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 167, in _migrate_all_forwards
+                                 state = self.apply_migration(
+                                         ^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/executor.py", line 255, in apply_migration
+                                 state = migration.apply(state, schema_editor)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/migration.py", line 132, in apply
+                                 operation.database_forwards(
+                               File "/usr/local/lib/python3.12/site-packages/django/db/migrations/operations/models.py", line 97, in database_forwards
+                                 schema_editor.create_model(model)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 505, in create_model
+                                 self.execute(sql, params or None)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/postgresql/schema.py", line 45, in execute
+                                 return super().execute(sql, params)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/base/schema.py", line 202, in execute
+                                 cursor.execute(sql, params)
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+                                 return self._execute_with_wrappers(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+                                 return executor(sql, params, many, context)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+                                 with self.db.wrap_database_errors:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/django/db/utils.py", line 91, in __exit__
+                                 raise dj_exc_value.with_traceback(traceback) from exc_value
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             django.db.utils.ProgrammingError: type "vector" does not exist
+2026-02-24T20:56:43.805549Z  The above exception was the direct cause of the following exception:
+2026-02-24T20:56:43.805543Z                                                               ^
+2026-02-24T20:56:43.805540Z  LINE 1: ...PRIMARY KEY, "content" text NOT NULL, "embedding" vector(307...
+2026-02-24T20:56:43.805526Z  Traceback (most recent call last):
+                               File "/usr/local/lib/python3.12/site-packages/django/db/backends/utils.py", line 103, in _execute
+                                 return self.cursor.execute(sql)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+                               File "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+                                 raise ex.with_traceback(None)
+                             psycopg.errors.UndefinedObject: type "vector" does not exist
+2026-02-24T20:56:43.794344Z    Applying chat.0009_chat_guest_session_alter_chat_user... OK
+2026-02-24T20:56:43.726216Z    Applying chat.0008_ttscache... OK
+2026-02-24T20:56:43.691233Z    Applying chat.0007_chatmessage_sources... OK
+2026-02-24T20:56:43.667891Z    Applying chat.0006_chatresponsemetric... OK
+2026-02-24T20:56:43.628048Z    Applying chat.0005_chat_sources... OK
+2026-02-24T20:56:43.577579Z    Applying chat.0004_remove_chatmessage_liked_chatmessage_feedback... OK
+2026-02-24T20:56:43.552211Z    Applying chat.0003_chatmessage_extracted_text... OK
+2026-02-24T20:56:43.534364Z    Applying chat.0002_chatmessage_duration... OK
+2026-02-24T20:56:43.514287Z    Applying bots.0010_migrate_publicity... OK
+2026-02-24T20:56:43.487900Z    Applying bots.0009_alter_bot_publicity... OK
+2026-02-24T20:56:43.462785Z    Applying bots.0008_bot_guest_session_alter_bot_owner... OK
+2026-02-24T20:56:43.383984Z    Applying bots.0007_alter_bot_voice... OK
+2026-02-24T20:56:43.361289Z    Applying bots.0006_remove_bot_background_image_remove_bot_theme_color_and_more... OK
+2026-02-24T20:56:43.244642Z    Applying bots.0005_bot_study_spaces... OK
+2026-02-24T20:56:43.156158Z    Applying bots.0004_bot_background_image_bot_theme_color... OK
+2026-02-24T20:56:43.111936Z    Applying bots.0003_bot_allow_web_search... OK
+2026-02-24T20:56:43.088340Z    Applying bots.0002_bot_suggestion1_bot_suggestion2_bot_suggestion3... OK
+2026-02-24T20:56:43.014261Z    Applying studio.0004_studyspace... OK

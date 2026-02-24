@@ -1,0 +1,541 @@
+﻿[
+  {
+    "insertId": "-ezceqcd88v4",
+    "labels": {
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp"
+    },
+    "logName": "projects/stellarys-lm/logs/cloudaudit.googleapis.com%2Fsystem_event",
+    "protoPayload": {
+      "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+      "methodName": "/Jobs.RunJob",
+      "resourceName": "namespaces/stellarys-lm/executions/backend-migrate-vtsgp",
+      "response": {
+        "@type": "type.googleapis.com/google.cloud.run.v1.Execution",
+        "apiVersion": "run.googleapis.com/v1",
+        "kind": "Execution",
+        "metadata": {
+          "annotations": {
+            "run.googleapis.com/client-name": "gcloud",
+            "run.googleapis.com/client-version": "556.0.0",
+            "run.googleapis.com/cloudsql-instances": "stellarys-lm:us-central1:stellarys-db",
+            "run.googleapis.com/creator": "davisantossousa2@gmail.com",
+            "run.googleapis.com/execution-environment": "gen2",
+            "run.googleapis.com/lastModifier": "davisantossousa2@gmail.com",
+            "run.googleapis.com/operation-id": "ea2306d9-58f0-4383-bbc9-b54dd512b8e6"
+          },
+          "creationTimestamp": "2026-02-24T10:47:11.550981Z",
+          "generation": 1,
+          "labels": {
+            "client.knative.dev/nonce": "ruk_vuf_cib",
+            "cloud.googleapis.com/location": "us-central1",
+            "run.googleapis.com/job": "backend-migrate",
+            "run.googleapis.com/jobGeneration": "14",
+            "run.googleapis.com/jobResourceVersion": "1771930016280955",
+            "run.googleapis.com/jobUid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+          },
+          "name": "backend-migrate-vtsgp",
+          "namespace": "140218503200",
+          "ownerReferences": [
+            {
+              "apiVersion": "serving.knative.dev/v1",
+              "blockOwnerDeletion": true,
+              "controller": true,
+              "kind": "Job",
+              "name": "backend-migrate",
+              "uid": "2f4ed14f-b759-43a5-b3e6-a1f87fb1514a"
+            }
+          ],
+          "resourceVersion": "AAZLj7dW/f0",
+          "selfLink": "/apis/run.googleapis.com/v1/namespaces/140218503200/executions/backend-migrate-vtsgp",
+          "uid": "44d18ec0-810e-4b95-979f-e2affb95b1b2"
+        },
+        "spec": {
+          "parallelism": 1,
+          "taskCount": 1,
+          "template": {
+            "spec": {
+              "containers": [
+                {
+                  "args": [
+                    "manage.py",
+                    "migrate"
+                  ],
+                  "command": [
+                    "python"
+                  ],
+                  "env": [
+                    {
+                      "name": "USE_VERTEX_AI",
+                      "value": "True"
+                    },
+                    {
+                      "name": "VERTEX_PROJECT_ID",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "VERTEX_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "DJANGO_DEBUG",
+                      "value": "False"
+                    },
+                    {
+                      "name": "DJANGO_SETTINGS_MODULE",
+                      "value": "config.settings"
+                    },
+                    {
+                      "name": "STORAGE_BACKEND",
+                      "value": "gcs"
+                    },
+                    {
+                      "name": "GCS_BUCKET_NAME",
+                      "value": "stellarys-lm-prod-davisantos"
+                    },
+                    {
+                      "name": "QUEUE_BACKEND",
+                      "value": "cloud_tasks"
+                    },
+                    {
+                      "name": "GCP_PROJECT",
+                      "value": "stellarys-lm"
+                    },
+                    {
+                      "name": "GCP_LOCATION",
+                      "value": "us-central1"
+                    },
+                    {
+                      "name": "GCP_QUEUE",
+                      "value": "artifact-generation"
+                    },
+                    {
+                      "name": "VECTOR_DB_BACKEND",
+                      "value": "pgvector"
+                    },
+                    {
+                      "name": "GEMINI_API_KEY"
+                    },
+                    {
+                      "name": "DJANGO_SECRET_KEY",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DJANGO_SECRET_KEY"
+                        }
+                      }
+                    },
+                    {
+                      "name": "DATABASE_URL",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "DATABASE_URL"
+                        }
+                      }
+                    },
+                    {
+                      "name": "CLOUD_TASKS_SECRET",
+                      "valueFrom": {
+                        "secretKeyRef": {
+                          "key": "latest",
+                          "name": "CLOUD_TASKS_SECRET"
+                        }
+                      }
+                    }
+                  ],
+                  "image": "us-central1-docker.pkg.dev/stellarys-lm/cloud-run-source-deploy/backend-api@sha256:0a63c4dda3a091acab5dc4138255d8b40804f5651a21bf46168c2ac165a0dab2",
+                  "resources": {
+                    "limits": {
+                      "cpu": "1000m",
+                      "memory": "512Mi"
+                    }
+                  }
+                }
+              ],
+              "maxRetries": 3,
+              "serviceAccountName": "stellarys-backend@stellarys-lm.iam.gserviceaccount.com",
+              "timeoutSeconds": "600"
+            }
+          }
+        },
+        "status": {
+          "completionTime": "2026-02-24T10:54:47.153694Z",
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-02-24T10:54:47.153694Z",
+              "message": "Task backend-migrate-vtsgp-task0 failed with exit code: 1 and message: The container exited with an error.",
+              "reason": "NonZeroExitCode",
+              "status": "False",
+              "type": "Completed"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T10:47:12.513285Z",
+              "message": "Provisioned imported containers.",
+              "status": "True",
+              "type": "ResourcesAvailable"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T10:48:49.238337Z",
+              "message": "Started deployed execution in 1m36.72s.",
+              "status": "True",
+              "type": "Started"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T10:47:12.359246Z",
+              "message": "Imported container image.",
+              "status": "True",
+              "type": "ContainerReady"
+            },
+            {
+              "lastTransitionTime": "2026-02-24T10:54:48.602109Z",
+              "message": "System will retry after 00:00 from lastTransitionTime for attempt 0.",
+              "reason": "ImmediateRetry",
+              "severity": "Info",
+              "status": "True",
+              "type": "Retry"
+            }
+          ],
+          "failedCount": 1,
+          "logUri": "https://console.cloud.google.com/logs/viewer?project=stellarys-lm&advancedFilter=resource.type%3D%22cloud_run_job%22%0Aresource.labels.job_name%3D%22backend-migrate%22%0Aresource.labels.location%3D%22us-central1%22%0Alabels.%22run.googleapis.com/execution_name%22%3D%22backend-migrate-vtsgp%22",
+          "observedGeneration": 1,
+          "retriedCount": 1,
+          "startTime": "2026-02-24T10:47:20.621712Z"
+        }
+      },
+      "serviceName": "run.googleapis.com",
+      "status": {
+        "code": 10,
+        "message": "Execution backend-migrate-vtsgp has failed to complete, 0/1 tasks were a success."
+      }
+    },
+    "receiveTimestamp": "2026-02-24T10:54:49.479479183Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "timestamp": "2026-02-24T10:54:48.615379Z"
+  },
+  {
+    "insertId": "699d83740007f45d1e5a6b36",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c450c0e9f006785222f6f141262326fe1f469a281a3d2dde650c56bce855b5d78ef2843f3782f4a789d9f74e2100f1518566988f0afa9777b7b59290de5bff47254d5556ed73bbc5005b2a",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T10:54:44.526542124Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Container called exit(1).",
+    "timestamp": "2026-02-24T10:54:44.521256Z"
+  },
+  {
+    "errorGroups": [
+      {
+        "id": "CNaO45j9kpHy8QE"
+      }
+    ],
+    "insertId": "699d837300095afb6c48d234",
+    "labels": {
+      "instanceId": "00da6cd2c450c0e9f006785222f6f141262326fe1f469a281a3d2dde650c56bce855b5d78ef2843f3782f4a789d9f74e2100f1518566988f0afa9777b7b59290de5bff47254d5556ed73bbc5005b2a",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:54:43.702971373Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "Traceback (most recent call last):\n  File \"/app/manage.py\", line 22, in <module>\n    main()\n  File \"/app/manage.py\", line 18, in main\n    execute_from_command_line(sys.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 442, in execute_from_command_line\n    utility.execute()\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 436, in execute\n    self.fetch_command(subcommand).run_from_argv(self.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 413, in run_from_argv\n    self.execute(*args, **cmd_options)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 459, in execute\n    output = self.handle(*args, **options)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 107, in wrapper\n    res = handle_func(*args, **kwargs)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py\", line 121, in handle\n    executor.loader.check_consistent_history(connection)\n  File \"/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py\", line 327, in check_consistent_history\n    raise InconsistentMigrationHistory(\ndjango.db.migrations.exceptions.InconsistentMigrationHistory: Migration studio.0001_initial is applied before its dependency chat.0002_chatmessage_duration on database 'default'.",
+    "timestamp": "2026-02-24T10:54:43.613115Z"
+  },
+  {
+    "insertId": "699d8372000aa9624ebdde50",
+    "labels": {
+      "instanceId": "00da6cd2c450c0e9f006785222f6f141262326fe1f469a281a3d2dde650c56bce855b5d78ef2843f3782f4a789d9f74e2100f1518566988f0afa9777b7b59290de5bff47254d5556ed73bbc5005b2a",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:54:42.705533701Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.",
+    "timestamp": "2026-02-24T10:54:42.698722Z"
+  },
+  {
+    "insertId": "699d8366000321619099bdea",
+    "labels": {
+      "instanceId": "00da6cd2c450c0e9f006785222f6f141262326fe1f469a281a3d2dde650c56bce855b5d78ef2843f3782f4a789d9f74e2100f1518566988f0afa9777b7b59290de5bff47254d5556ed73bbc5005b2a",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2026-02-24T10:54:30.211025508Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "Consider using the pymupdf_layout package for a greatly improved page layout analysis.",
+    "timestamp": "2026-02-24T10:54:30.205153Z"
+  },
+  {
+    "insertId": "699d836300077c6e54181eb7",
+    "labels": {
+      "instanceId": "00da6cd2c450c0e9f006785222f6f141262326fe1f469a281a3d2dde650c56bce855b5d78ef2843f3782f4a789d9f74e2100f1518566988f0afa9777b7b59290de5bff47254d5556ed73bbc5005b2a",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "3",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:54:27.495683205Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "GEMINI_API_KEY n?o encontrada.",
+    "timestamp": "2026-02-24T10:54:27.490606Z"
+  },
+  {
+    "insertId": "699d8316000d82e8040f5f7e",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c40c9cb79fd13aa552f2bbaac998c645ab1ca96981f98bf42fcdc40ef4737e34d7cff2619186aad376cd7c4cacea71ee31aa7ac07a7b23223ba61e42b6c64be39575691e92c6fcd41675c2613e2c",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T10:53:10.890144692Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Container called exit(1).",
+    "timestamp": "2026-02-24T10:53:10.885279Z"
+  },
+  {
+    "errorGroups": [
+      {
+        "id": "CNaO45j9kpHy8QE"
+      }
+    ],
+    "insertId": "699d8315000a10ec8c731c7a",
+    "labels": {
+      "instanceId": "00da6cd2c40c9cb79fd13aa552f2bbaac998c645ab1ca96981f98bf42fcdc40ef4737e34d7cff2619186aad376cd7c4cacea71ee31aa7ac07a7b23223ba61e42b6c64be39575691e92c6fcd41675c2613e2c",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:53:09.897918203Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "Traceback (most recent call last):\n  File \"/app/manage.py\", line 22, in <module>\n    main()\n  File \"/app/manage.py\", line 18, in main\n    execute_from_command_line(sys.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 442, in execute_from_command_line\n    utility.execute()\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 436, in execute\n    self.fetch_command(subcommand).run_from_argv(self.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 413, in run_from_argv\n    self.execute(*args, **cmd_options)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 459, in execute\n    output = self.handle(*args, **options)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 107, in wrapper\n    res = handle_func(*args, **kwargs)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py\", line 121, in handle\n    executor.loader.check_consistent_history(connection)\n  File \"/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py\", line 327, in check_consistent_history\n    raise InconsistentMigrationHistory(\ndjango.db.migrations.exceptions.InconsistentMigrationHistory: Migration studio.0001_initial is applied before its dependency chat.0002_chatmessage_duration on database 'default'.",
+    "timestamp": "2026-02-24T10:53:09.659692Z"
+  },
+  {
+    "insertId": "699d8314000e65c19cd734ae",
+    "labels": {
+      "instanceId": "00da6cd2c40c9cb79fd13aa552f2bbaac998c645ab1ca96981f98bf42fcdc40ef4737e34d7cff2619186aad376cd7c4cacea71ee31aa7ac07a7b23223ba61e42b6c64be39575691e92c6fcd41675c2613e2c",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:53:09.230478549Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.",
+    "timestamp": "2026-02-24T10:53:08.943553Z"
+  },
+  {
+    "insertId": "699d830d0004f3e926bcebba",
+    "labels": {
+      "instanceId": "00da6cd2c40c9cb79fd13aa552f2bbaac998c645ab1ca96981f98bf42fcdc40ef4737e34d7cff2619186aad376cd7c4cacea71ee31aa7ac07a7b23223ba61e42b6c64be39575691e92c6fcd41675c2613e2c",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2026-02-24T10:53:01.329915401Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "Consider using the pymupdf_layout package for a greatly improved page layout analysis.",
+    "timestamp": "2026-02-24T10:53:01.324585Z"
+  },
+  {
+    "insertId": "699d830b00089efb10485bf1",
+    "labels": {
+      "instanceId": "00da6cd2c40c9cb79fd13aa552f2bbaac998c645ab1ca96981f98bf42fcdc40ef4737e34d7cff2619186aad376cd7c4cacea71ee31aa7ac07a7b23223ba61e42b6c64be39575691e92c6fcd41675c2613e2c",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "2",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:52:59.568921446Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "GEMINI_API_KEY n?o encontrada.",
+    "timestamp": "2026-02-24T10:52:59.564987Z"
+  },
+  {
+    "insertId": "699d829e0007f20a92229dbf",
+    "labels": {
+      "container_name": "worker",
+      "instanceId": "00da6cd2c4b2c6a841a67e78134bf00e43dab500e88965978de4bba27a63bed84af8a83f781d0993e24d4da54051b9b4f6a917d500ee82c5feda0aae717f52be6244f6bf3b4d66a0521ee3c50e1e34bc",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fvarlog%2Fsystem",
+    "receiveTimestamp": "2026-02-24T10:51:10.526405276Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "WARNING",
+    "textPayload": "Container called exit(1).",
+    "timestamp": "2026-02-24T10:51:10.520598Z"
+  },
+  {
+    "errorGroups": [
+      {
+        "id": "CNaO45j9kpHy8QE"
+      }
+    ],
+    "insertId": "699d829d0009e0d34a3bbea6",
+    "labels": {
+      "instanceId": "00da6cd2c4b2c6a841a67e78134bf00e43dab500e88965978de4bba27a63bed84af8a83f781d0993e24d4da54051b9b4f6a917d500ee82c5feda0aae717f52be6244f6bf3b4d66a0521ee3c50e1e34bc",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:51:09.945567605Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "severity": "ERROR",
+    "textPayload": "Traceback (most recent call last):\n  File \"/app/manage.py\", line 22, in <module>\n    main()\n  File \"/app/manage.py\", line 18, in main\n    execute_from_command_line(sys.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 442, in execute_from_command_line\n    utility.execute()\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/__init__.py\", line 436, in execute\n    self.fetch_command(subcommand).run_from_argv(self.argv)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 413, in run_from_argv\n    self.execute(*args, **cmd_options)\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 459, in execute\n    output = self.handle(*args, **options)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/base.py\", line 107, in wrapper\n    res = handle_func(*args, **kwargs)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/django/core/management/commands/migrate.py\", line 121, in handle\n    executor.loader.check_consistent_history(connection)\n  File \"/usr/local/lib/python3.12/site-packages/django/db/migrations/loader.py\", line 327, in check_consistent_history\n    raise InconsistentMigrationHistory(\ndjango.db.migrations.exceptions.InconsistentMigrationHistory: Migration studio.0001_initial is applied before its dependency chat.0002_chatmessage_duration on database 'default'.",
+    "timestamp": "2026-02-24T10:51:09.647379Z"
+  },
+  {
+    "insertId": "699d829c000e56cbef18cbeb",
+    "labels": {
+      "instanceId": "00da6cd2c4b2c6a841a67e78134bf00e43dab500e88965978de4bba27a63bed84af8a83f781d0993e24d4da54051b9b4f6a917d500ee82c5feda0aae717f52be6244f6bf3b4d66a0521ee3c50e1e34bc",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstderr",
+    "receiveTimestamp": "2026-02-24T10:51:08.945608843Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON not configured. Billing verification will fail.",
+    "timestamp": "2026-02-24T10:51:08.939723Z"
+  },
+  {
+    "insertId": "699d8292000b9f00902d4179",
+    "labels": {
+      "instanceId": "00da6cd2c4b2c6a841a67e78134bf00e43dab500e88965978de4bba27a63bed84af8a83f781d0993e24d4da54051b9b4f6a917d500ee82c5feda0aae717f52be6244f6bf3b4d66a0521ee3c50e1e34bc",
+      "run.googleapis.com/execution_name": "backend-migrate-vtsgp",
+      "run.googleapis.com/task_attempt": "1",
+      "run.googleapis.com/task_index": "0"
+    },
+    "logName": "projects/stellarys-lm/logs/run.googleapis.com%2Fstdout",
+    "receiveTimestamp": "2026-02-24T10:50:58.765651301Z",
+    "resource": {
+      "labels": {
+        "job_name": "backend-migrate",
+        "location": "us-central1",
+        "project_id": "stellarys-lm"
+      },
+      "type": "cloud_run_job"
+    },
+    "textPayload": "Consider using the pymupdf_layout package for a greatly improved page layout analysis.",
+    "timestamp": "2026-02-24T10:50:58.761600Z"
+  }
+]

@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types
 from django.conf import settings
 from .ai_client import get_ai_client
+from core.genai_models import GENAI_MODEL_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class StrictStyleService:
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=GENAI_MODEL_TEXT,
                 contents=[
                     types.Content(role="user", parts=[types.Part(text=system_instruction + "\n" + user_prompt)])
                 ],

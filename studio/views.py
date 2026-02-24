@@ -2,13 +2,13 @@ import io
 import json
 import logging
 import uuid
-import django_rq
 import os
+from django.utils import timezone
 from django.conf import settings
 from rest_framework import viewsets, permissions, status, parsers
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.http import HttpResponse, FileResponse, Http404
+from django.http import HttpResponse, FileResponse, Http404, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.db import transaction
 from django.core.files import File
@@ -22,9 +22,16 @@ from chat.services.content_extractor import ContentExtractor
 from chat.services.image_description_service import image_description_service
 from studio.services.knowledge_ingestion_service import KnowledgeIngestionService
 from studio.jobs.artifact_jobs import generate_artifact_job
+from core.perf import log_perf, now_ms, ms_since
 
 from .models import KnowledgeArtifact, KnowledgeSource, StudySpace
 from .serializers import KnowledgeArtifactSerializer, KnowledgeSourceSerializer, StudySpaceSerializer
+from accounts.permissions import IsUserOrGuest
+from accounts.utils import get_actor
+from billing.services.quotas import check_and_consume, QuotaExceededException
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +41,44 @@ class KnowledgeSourceViewSet(viewsets.ModelViewSet):
     """
     queryset = KnowledgeSource.objects.all()
     serializer_class = KnowledgeSourceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsUserOrGuest]
 
     def get_queryset(self):
-        return KnowledgeSource.objects.filter(user=self.request.user).order_by('-created_at')
+        actor_type, actor = get_actor(self.request)
+        if actor_type == 'user':
+            return KnowledgeSource.objects.filter(user=actor).order_by('-created_at')
+        elif actor_type == 'guest':
+            return KnowledgeSource.objects.filter(guest_session=actor).order_by('-created_at')
+        return KnowledgeSource.objects.none()
 
     def perform_create(self, serializer):
-        # Save initially
-        instance = serializer.save(user=self.request.user)
+        actor_type, actor = get_actor(self.request)
 
-        # Ingest using centralized service
-        # bot_id=0 signifies Global/Library context
-        KnowledgeIngestionService.ingest_source(instance, bot_id=0)
+        # --- BILLING CHECK & CREATION (ATOMIC) ---
+        owner_user = actor if actor_type == 'user' else None
+        owner_guest = actor if actor_type == 'guest' else None
+
+        with transaction.atomic():
+            if actor_type == 'user':
+                # Explicit row lock on User to prevent race condition on count()
+                try:
+                    User.objects.select_for_update().get(pk=actor.pk)
+                except User.DoesNotExist:
+                    pass
+            # GuestSession lock handled inside check_and_consume if needed, or we can add here if critical
+
+            # Locks user/trial row and checks limit inside transaction
+            check_and_consume(user=owner_user, guest_session=owner_guest, resource='source', quantity=1)
+
+            # Save
+            if actor_type == 'user':
+                instance = serializer.save(user=actor)
+            else:
+                instance = serializer.save(guest_session=actor, user=None)
+
+            # Ingest using centralized service
+            # bot_id=0 signifies Global/Library context
+            KnowledgeIngestionService.ingest_source(instance, bot_id=0)
 
     @action(detail=True, methods=['post'])
     def add_to_chat(self, request, pk=None):
@@ -56,11 +89,16 @@ class KnowledgeSourceViewSet(viewsets.ModelViewSet):
         source = self.get_object()
         chat_id = request.data.get('chat_id')
 
+        actor_type, actor = get_actor(request)
+
         if not chat_id:
             return Response({"error": "chat_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            chat = Chat.objects.get(id=chat_id, user=request.user)
+            if actor_type == 'user':
+                chat = Chat.objects.get(id=chat_id, user=actor)
+            else:
+                chat = Chat.objects.get(id=chat_id, guest_session=actor)
         except Chat.DoesNotExist:
             return Response({"error": "Chat not found or access denied"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -122,14 +160,29 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
     """
     queryset = StudySpace.objects.all()
     serializer_class = StudySpaceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsUserOrGuest]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
-        return StudySpace.objects.filter(user=self.request.user).order_by('-created_at')
+        actor_type, actor = get_actor(self.request)
+        if actor_type == 'user':
+            return StudySpace.objects.filter(user=actor).order_by('-created_at')
+        elif actor_type == 'guest':
+            return StudySpace.objects.filter(guest_session=actor).order_by('-created_at')
+        return StudySpace.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        actor_type, actor = get_actor(self.request)
+
+        # --- BILLING CHECK ---
+        owner_user = actor if actor_type == 'user' else None
+        owner_guest = actor if actor_type == 'guest' else None
+        check_and_consume(user=owner_user, guest_session=owner_guest, resource='study_space', quantity=1)
+
+        if actor_type == 'user':
+            serializer.save(user=actor)
+        else:
+            serializer.save(guest_session=actor, user=None)
 
     @action(detail=True, methods=['post'])
     def link_bot(self, request, pk=None):
@@ -172,6 +225,13 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         """
         space = self.get_object()
 
+        actor_type, actor = get_actor(request)
+
+        # --- BILLING CHECK ---
+        owner_user = actor if actor_type == 'user' else None
+        owner_guest = actor if actor_type == 'guest' else None
+        check_and_consume(user=owner_user, guest_session=owner_guest, resource='source', quantity=1)
+
         # 1. Create KnowledgeSource
         title = request.data.get('title', 'Space Upload')
         source_type = request.data.get('source_type', 'FILE')
@@ -180,10 +240,14 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         # KnowledgeSource.SourceType: FILE, URL, YOUTUBE, TEXT
 
         source = KnowledgeSource(
-            user=request.user,
             title=title,
             source_type=source_type
         )
+
+        if actor_type == 'user':
+            source.user = actor
+        else:
+            source.guest_session = actor
 
         if source_type == 'FILE' and request.FILES.get('file'):
             source.file = request.FILES['file']
@@ -209,8 +273,13 @@ class StudySpaceViewSet(viewsets.ModelViewSet):
         if not source_id:
             return Response({"error": "source_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        actor_type, actor = get_actor(request)
         try:
-            source = KnowledgeSource.objects.get(id=source_id, user=request.user)
+            if actor_type == 'user':
+                source = KnowledgeSource.objects.get(id=source_id, user=actor)
+            else:
+                source = KnowledgeSource.objects.get(id=source_id, guest_session=actor)
+
             space.sources.remove(source)
             return Response({"status": "removed"}, status=status.HTTP_200_OK)
         except KnowledgeSource.DoesNotExist:
@@ -222,14 +291,20 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
     """
     queryset = KnowledgeArtifact.objects.all()
     serializer_class = KnowledgeArtifactSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsUserOrGuest]
 
     def get_queryset(self):
         """
         Filter artifacts by user and optionally by chat_id.
         """
-        user = self.request.user
-        queryset = KnowledgeArtifact.objects.filter(chat__user=user)
+        actor_type, actor = get_actor(self.request)
+
+        if actor_type == 'user':
+            queryset = KnowledgeArtifact.objects.filter(chat__user=actor)
+        elif actor_type == 'guest':
+            queryset = KnowledgeArtifact.objects.filter(chat__guest_session=actor)
+        else:
+             return KnowledgeArtifact.objects.none()
 
         chat_id = self.request.query_params.get('chat_id')
         if chat_id:
@@ -240,8 +315,23 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Ensure the chat belongs to the user
         chat = serializer.validated_data['chat']
-        if chat.user != self.request.user:
+        actor_type, actor = get_actor(self.request)
+
+        allowed = False
+        if actor_type == 'user':
+            allowed = (chat.user == actor)
+        elif actor_type == 'guest':
+            allowed = (chat.guest_session == actor)
+
+        if not allowed:
             raise permissions.PermissionDenied("You do not have access to this chat.")
+
+        # --- BILLING CHECK ---
+        owner_user = actor if actor_type == 'user' else None
+        owner_guest = actor if actor_type == 'guest' else None
+        # Artifact Type
+        a_type = serializer.validated_data.get('type')
+        check_and_consume(user=owner_user, guest_session=owner_guest, resource='artifact', quantity=1, type=a_type)
 
         # Save initially (status is PROCESSING by default in model)
         instance = serializer.save()
@@ -259,15 +349,36 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             'includeChatHistory': request_config.get('includeChatHistory', False)
         }
 
-        # Generate Real Content via RQ (Async)
+        # Generate Real Content via Runner (Thread or Cloud Task)
         instance.stage = KnowledgeArtifact.Stage.QUEUED
         instance.correlation_id = uuid.uuid4()
+        instance.enqueued_at = timezone.now()
+        instance.options_json = options
         instance.save()
 
+        t0 = now_ms()
         try:
-            django_rq.enqueue(generate_artifact_job, instance.id, options)
+            from studio.services.queue_provider import enqueue_artifact
+            task_id = enqueue_artifact(instance.id, options)
+
+            if task_id:
+                instance.job_id = task_id
+                instance.save(update_fields=['job_id'])
+
+            owner_type, owner = get_actor(self.request)
+            owner_id = owner.id if hasattr(owner, 'id') else 'unknown'
+
+            log_perf("artifact.enqueue", instance.id,
+                     backend=settings.QUEUE_BACKEND,
+                     elapsed_ms=ms_since(t0),
+                     job_ref=task_id,
+                     owner_type=owner_type,
+                     owner_id=owner_id,
+                     type=instance.type)
+            print(f"[ARTIFACT_ENQUEUE] artifact_id={instance.id} type={instance.type} backend={settings.QUEUE_BACKEND}", flush=True)
         except Exception as e:
             logger.error(f"Error enqueueing artifact generation job: {e}", exc_info=True)
+            log_perf("artifact.enqueue_error", instance.id, error=str(e))
             instance.status = KnowledgeArtifact.Status.ERROR
             instance.error_message = f"Enqueue failed: {str(e)}"
             instance.save()
@@ -285,6 +396,16 @@ class KnowledgeArtifactViewSet(viewsets.ModelViewSet):
             if not artifact.media_url:
                 raise Http404("Audio file not available.")
 
+            # Check for GCS or other remote URL
+            if artifact.media_url.startswith("gs://") or artifact.media_url.startswith("http"):
+                from studio.services.storage_provider import get_storage_provider
+                download_url = get_storage_provider().get_download_url(artifact.media_url)
+                if download_url:
+                    return HttpResponseRedirect(download_url)
+                else:
+                    raise Http404("Unable to generate download link.")
+
+            # Fallback to Local Storage
             # Construct absolute path
             # artifact.media_url usually starts with /media/
             # Remove /media/ prefix if present to join with MEDIA_ROOT

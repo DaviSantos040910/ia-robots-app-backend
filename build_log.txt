@@ -1,0 +1,25 @@
+﻿python.exe : ERROR: 
+(gcloud.builds.log) 
+NOT_FOUND: Requested entity 
+was not found. This command 
+is authenticated as 
+davisantossousa2@gmail.com 
+which is the active account 
+specified by the 
+[core/account] property.
+No C:\Users\davis\AppData\Lo
+cal\Google\Cloud SDK\google-
+cloud-sdk\bin\gcloud.ps1:114
+ caractere:3
++   & "$cloudsdk_python" 
+$run_args_array
++   ~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (ERROR  
+  : (gcloud....ount] prop   
+ erty.:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 

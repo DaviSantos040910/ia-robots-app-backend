@@ -84,36 +84,40 @@ class StrictBoundary:
         Constrói mensagem de recusa. (Ported from chat_service to break dependency cycle if needed)
         """
         if not lang:
-            lang = self.detect_lang(question)
+            # Fallback para PT se a pergunta for muito curta (< 12 chars), ex: "Oi", "Olá"
+            if len(question.strip()) < 12:
+                lang = "pt"
+            else:
+                lang = self.detect_lang(question)
 
-        q_excerpt = self.safe_excerpt(question)
-        prefix = f"{bot_name}: " if bot_name else ""
+        # q_excerpt = self.safe_excerpt(question) # Removido para simplificar
+        prefix = "" # Forçado vazio para evitar "Nome: ..." no início
 
         templates = {
             "pt": {
-                True: "{prefix}Não encontrei essa informação nas suas fontes para responder em modo restrito.\n\nPergunta: “{q}”\n\nPara eu ajudar com base nas fontes, você pode:\n- adicionar uma fonte relevante,\n- indicar onde isso aparece (arquivo/página/trecho),\n- ou reformular a pergunta usando termos presentes nos documentos.",
-                False: "{prefix}No modo restrito, eu só posso responder usando fontes.\n\nPergunta: “{q}”\n\nPara eu ajudar, adicione uma fonte (PDF, imagem, link, etc.) e tente novamente."
+                True: "Não encontrei essa informação nas suas fontes. Para eu ajudar em modo restrito, adicione uma fonte relevante ou indique onde isso aparece (página/trecho).",
+                False: "No modo restrito, eu só posso responder usando fontes. Adicione uma fonte (PDF, imagem, link) para começar."
             },
             "en": {
-                True: "{prefix}I couldn’t find this information in your sources to answer in strict mode.\n\nQuestion: “{q}”\n\nTo help based on your sources, you can:\n- add a relevant source,\n- point to where this appears (file/page/section),\n- or rephrase using terms present in the documents.",
-                False: "{prefix}In strict mode, I can only answer using sources.\n\nQuestion: “{q}”\n\nTo help, add a source (PDF, image, link, etc.) and try again."
+                True: "I couldn’t find this information in your sources to answer in strict mode.\n\nTo help based on your sources, you can:\n- add a relevant source,\n- point to where this appears (file/page/section),\n- or rephrase using terms present in the documents.",
+                False: "In strict mode, I can only answer using sources.\n\nTo help, add a source (PDF, image, link, etc.) and try again."
             },
             "es": {
-                True: "{prefix}No encontré esta información en tus fuentes para responder en modo estricto.\n\nPregunta: “{q}”\n\nPara ayudar basándome en tus fuentes, puedes:\n- agregar una fuente relevante,\n- indicar dónde aparece (archivo/página/sección),\n- o reformular usando términos presentes en los documentos.",
-                False: "{prefix}En modo estricto, solo puedo responder usando fuentes.\n\nPregunta: “{q}”\n\nPara ayudar, agrega una fuente (PDF, imagen, enlace, etc.) e inténtalo de nuevo."
+                True: "No encontré esta información en tus fuentes para responder en modo estricto.\n\nPara ayudar basándome en tus fuentes, puedes:\n- agregar una fuente relevante,\n- indicar dónde aparece (archivo/página/sección),\n- o reformular usando términos presentes en los documentos.",
+                False: "En modo estricto, solo puedo responder usando fuentes.\n\nPara ayudar, agrega una fuente (PDF, imagen, enlace, etc.) e inténtalo de nuevo."
             }
         }
 
-        template = templates.get(lang, templates["en"])[has_any_sources]
-        return template.format(prefix=prefix, q=q_excerpt)
+        template = templates.get(lang, templates["pt"])[has_any_sources]
+        return template # Removido .format() pois não usamos mais placeholders
 
     def detect_lang(self, text: str) -> str:
         text = text.lower()
         es_markers = ["¿", "¡", "qué", "cómo", "por qué", "dónde", "fuente", "fuentes"]
         if any(m in text for m in es_markers): return "es"
-        pt_markers = ["você", "não", "por que", "onde", "fonte", "fontes", "documento", "documentos", "tutor", "quais", "quem", "qual"]
-        if any(m in text for m in pt_markers): return "pt"
-        return "en"
+        en_markers = ["you", "what", "where", "source", "why", "who", "which"]
+        if any(m in text for m in en_markers): return "en"
+        return "pt"
 
     def safe_excerpt(self, text: str, max_len: int = 120) -> str:
         if not text: return ""

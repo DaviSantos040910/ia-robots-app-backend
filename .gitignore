@@ -4,7 +4,11 @@ __pycache__/
 
 # Environment
 .env
+.env.prod
+.env.secrets
+env.prod.yaml
 venv/
+venv_linux/
 env/
 *.sqlite3
 
