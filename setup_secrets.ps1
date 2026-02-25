@@ -12,16 +12,22 @@ $MIGRATE_JOB = "backend-migrate"
 $SA = "stellarys-backend@stellarys-lm.iam.gserviceaccount.com"
 
 # --- CONFIGURAÇÃO DOS VALORES ---
-# Dica: Em um ambiente CI/CD, esses valores viriam de variáveis de ambiente.
-# Para uso manual, substitua os valores abaixo:
+# Agora os valores são carregados do arquivo .env.secrets (ignorado pelo Git)
+$SECRETS_FILE = "$PSScriptRoot\.env.secrets"
+$SECRETS = @{}
 
-$SECRETS = @{
-    "DJANGO_SECRET_KEY"                = "SUA_CHAVE_AQUI"
-    "DATABASE_URL"                     = "postgres://USUARIO:SENHA@/BASEDADOS?host=/cloudsql/PROJETO:REGIAO:INSTANCIA"
-    "CLOUD_TASKS_SECRET"               = "SUA_CHAVE_AQUI"
-    "SENDGRID_API_KEY"                 = "SUA_SENDGRID_KEY_AQUI"
-    "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" = ""  # Deixe vazio se não tiver ainda
-    "SENTRY_DSN"                       = ""  # Opcional
+if (Test-Path $SECRETS_FILE) {
+    Write-Host "--- Carregando segredos de .env.secrets" -ForegroundColor Gray
+    Get-Content $SECRETS_FILE | Where-Object { $_ -match "=" } | ForEach-Object {
+        $parts = $_ -split "=", 2
+        $key = $parts[0].Trim()
+        $val = $parts[1].Trim().Trim('"').Trim("'")
+        $SECRETS[$key] = $val
+    }
+}
+else {
+    Write-Host "!!! ATENÇÃO: Arquivo .env.secrets não encontrado!" -ForegroundColor Red
+    Write-Host "Crie o arquivo baseado no seu backup para que o script funcione." -ForegroundColor Yellow
 }
 
 function Ensure-Secret($name, $value) {
