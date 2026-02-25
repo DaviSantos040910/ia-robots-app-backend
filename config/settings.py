@@ -324,8 +324,8 @@ if not DEBUG:
 # ================================
 # Sentry Integration
 # ================================
-SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-if SENTRY_DSN and not DEBUG:
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if SENTRY_DSN and SENTRY_DSN.startswith("https://") and not DEBUG:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.django import DjangoIntegration
