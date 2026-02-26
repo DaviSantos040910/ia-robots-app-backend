@@ -991,6 +991,14 @@ class ContextSourcesView(APIView):
         sources_list = []
         seen_ids = set()
 
+        def safe_file_url(fieldfile):
+            if not fieldfile:
+                return None
+            try:
+                return fieldfile.url
+            except Exception:
+                return None
+
         # Helper para formatar
         def add_source(s, origin_type, prefix):
             if s.id in seen_ids: return
@@ -1000,7 +1008,7 @@ class ContextSourcesView(APIView):
                 'title': s.title,
                 'type': origin_type, # 'chat_source' ou 'space_source'
                 'source_type': s.source_type,
-                'url': s.url or (s.file.url if s.file else None),
+                'url': s.url or safe_file_url(s.file),
                 'created_at': s.created_at,
                 'selected': True
             })
