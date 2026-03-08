@@ -37,3 +37,5 @@ dj-database-url
 google-auth
 google-api-python-client
 sentry-sdk[django]>=2.0.0,<3.0.0
+whitenoise
+django-jazzmin

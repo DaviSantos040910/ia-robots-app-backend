@@ -56,11 +56,13 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # Application definition
 INSTALLED_APPS = [
+    "jazzmin",  # Better admin design
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "whitenoise.runserver_nostatic",  # Better static handling for local dev
     "django.contrib.staticfiles",
 
     "rest_framework",
@@ -78,6 +80,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # CORS for mobile apps
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # Serve static files
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -138,6 +141,17 @@ USE_TZ = True
 
 # Static files
 STATIC_URL = "static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+# Storage for WhiteNoise (compressed/cached assets)
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -250,6 +264,58 @@ RQ_QUEUES = {
 # Duração do trial do guest em minutos. Default: 3 dias (4320 minutos).
 GUEST_TRIAL_MINUTES = int(os.getenv("GUEST_TRIAL_MINUTES", "4320"))
 
+# --- JAZZMIN CONFIGURATION ---
+JAZZMIN_SETTINGS = {
+    "site_title": "Stellarys Admin",
+    "site_header": "Stellarys Admin",
+    "site_brand": "Stellarys AI",
+    "welcome_sign": "Bem-vindo ao Painel Stellarys",
+    "copyright": "Stellarys LM",
+    "search_model": ["accounts.User", "bots.Bot"],
+    "user_avatar": None,
+    # Icons for apps (Font Awesome)
+    "icons": {
+        "accounts.user": "fas fa-user",
+        "accounts.profile": "fas fa-id-card",
+        "bots.bot": "fas fa-robot",
+        "chat.message": "fas fa-comments",
+    },
+    # UI Customizer
+    "show_ui_builder": False,
+    "changeform_format": "horizontal_tabs",
+    # Custom CSS to force contrast in specific areas (white text on dark backgrounds)
+    "custom_css": "static/admin/css/custom_admin.css",
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-dark",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_fixed": True,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "slate",
+    "dark_mode_theme": "slate",
+    # Specific UI customizations for better contrast
+    "brand_colour": "navbar-dark",
+    "sidebar": "sidebar-dark-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark",
+}
+
 # --- Async Task Queue Configuration (Dual Backend) ---
 # 'thread' = Local Development (no Redis/Cloud required)
 # 'cloud_tasks' = Production (Google Cloud Tasks)
@@ -272,29 +338,19 @@ GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', '')
 # 'pgvector' = PostgreSQL with pgvector extension
 VECTOR_DB_BACKEND = os.getenv('VECTOR_DB_BACKEND', 'chroma')
 
+# This logic is now handled by the STORAGES dict above
+# but we maintain MEDIA_URL for GCS overrides if needed.
 if STORAGE_BACKEND == 'gcs':
-    STORAGES = {
-        "default": {
-            "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
-            "OPTIONS": {
-                "bucket_name": GCS_BUCKET_NAME,
-                "default_acl": None,  # L5: Python None, not string "None"
-            },
-        },
-        "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
+        "OPTIONS": {
+            "bucket_name": GCS_BUCKET_NAME,
+            "default_acl": None,
         },
     }
     MEDIA_URL = f'https://storage.googleapis.com/{GCS_BUCKET_NAME}/'
 else:
-    STORAGES = {
-        "default": {
-            "BACKEND": "django.core.files.storage.FileSystemStorage",
-        },
-        "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-        },
-    }
+    MEDIA_URL = '/media/'
 
 # ================================
 # Google Play Billing Configuration

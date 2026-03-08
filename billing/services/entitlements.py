@@ -33,11 +33,15 @@ def get_current_plan(user=None, guest_session=None):
     """
     Determines the effective plan.
     """
-    # 1. Check Subscription (User only)
-    if user and hasattr(user, 'subscription'):
-        sub = user.subscription
-        if sub.is_active():
-            return sub.plan.code # 'basic'
+    # 1. Check Premium Flag and Subscription (User only)
+    if user:
+        if user.is_premium:
+            return PLAN_BASIC
+        
+        if hasattr(user, 'subscription'):
+            sub = user.subscription
+            if sub.is_active():
+                return sub.plan.code # 'basic'
 
     # 2. Check Trial Status
     subject = user if user else guest_session

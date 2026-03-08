@@ -7,6 +7,7 @@ from .models import User
 class UserAdmin(DjangoUserAdmin):
     # Adicione 'is_premium' para que apareça na lista de usuários
     list_display = ("username", "email", "is_email_verified", "is_premium", "is_staff")
+    list_editable = ("is_premium",)
     list_filter = ("is_email_verified", "is_staff", "is_superuser", "is_premium")
     search_fields = ("username", "email")
 
